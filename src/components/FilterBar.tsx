@@ -18,7 +18,7 @@ interface FilterBarProps {
 }
 
 const REGIONS = ["All", "Downtown", "East Side", "Bay View", "Walker's Point", "Third Ward"];
-const GENRES = ["Art", "Comedy", "Family", "Food", "Music", "Sports", "Cultural", "Educational", "Business", "Technology"];
+const GENRES = ["Art", "Comedy", "Family", "Food & Drink", "Music", "Sports", "Cultural", "Educational", "Business", "Technology"];
 
 const FilterBar = ({
   selectedRegion,

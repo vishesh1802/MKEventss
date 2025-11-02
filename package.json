@@ -8,7 +8,8 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "upload-data": "npx tsx scripts/setup.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -46,6 +47,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "csv-parse": "^6.1.0",
+    "csv-parser": "^3.2.0",
     "date-fns": "^3.6.0",
     "dotenv": "^17.2.3",
     "embla-carousel-react": "^8.6.0",

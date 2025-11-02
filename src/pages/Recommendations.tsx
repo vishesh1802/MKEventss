@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import EventCard from "@/components/EventCard";
+import FilterBar from "@/components/FilterBar";
 import { Sparkles, MapPin, Heart } from "lucide-react";
 
 interface Event {
@@ -19,92 +20,71 @@ const Recommendations = () => {
   const [regionEvents, setRegionEvents] = useState<Event[]>([]);
   const [interestEvents, setInterestEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState("All");
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchRecommendations = async () => {
       setLoading(true);
+      setError(null);
       try {
-        // Mock data - replace with actual API call to /api/recommendations?userId=1
-        const mockRegionEvents: Event[] = [
-          {
-            id: 1,
-            title: "Downtown Summer Concert Series",
-            region: "Downtown",
-            genre: "Music",
-            date: "2025-06-15",
-            price: 0,
-            relevanceScore: 0.95,
-          },
-          {
-            id: 2,
-            title: "Lakefront Fireworks Show",
-            region: "Downtown",
-            genre: "Festival",
-            date: "2025-07-04",
-            price: 0,
-            relevanceScore: 0.92,
-          },
-          {
-            id: 3,
-            title: "City Market at the Square",
-            region: "Downtown",
-            genre: "Food",
-            date: "2025-05-28",
-            price: 0,
-            relevanceScore: 0.88,
-          },
-        ];
+        // Build query params
+        const params = new URLSearchParams({ user_id: 'user_1' });
+        if (selectedRegion !== "All") {
+          params.append('region', selectedRegion);
+        }
+        if (selectedGenres.length > 0) {
+          params.append('genres', selectedGenres.join(','));
+        }
+        
+        const response = await fetch(`/api/recommend?${params.toString()}`, {
+          headers: {
+            'Accept': 'application/json',
+          }
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API error:', response.status, errorText);
+          throw new Error('Failed to fetch recommendations');
+        }
+        const data = await response.json();
+        
+        // Map API response to Event format
+        const mappedEvents: Event[] = data.recommendations.map((rec: any, idx: number) => {
+          // Parse M/D/YY date to ISO format
+          let isoDate = rec.date;
+          if (rec.date && rec.date.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
+            const [month, day, year] = rec.date.split('/');
+            isoDate = `20${year.padStart(2, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          }
+          
+          return {
+            id: parseInt(rec.event_id?.replace(/\D/g, '') || String(idx + 1)),
+            title: rec.event_name || 'Untitled Event',
+            region: rec.venue_name || 'Milwaukee',
+            genre: rec.genre || 'General',
+            date: isoDate || new Date().toISOString().split('T')[0],
+            price: parseFloat(rec.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+            relevanceScore: rec.similarity_score,
+          };
+        });
 
-        const mockInterestEvents: Event[] = [
-          {
-            id: 4,
-            title: "Jazz & Blues Night",
-            region: "Bay View",
-            genre: "Music",
-            date: "2025-06-08",
-            price: 30,
-            relevanceScore: 0.93,
-          },
-          {
-            id: 5,
-            title: "Indie Rock Showcase",
-            region: "East Side",
-            genre: "Music",
-            date: "2025-05-22",
-            price: 15,
-            relevanceScore: 0.91,
-          },
-          {
-            id: 6,
-            title: "Electronic Music Festival",
-            region: "Walker's Point",
-            genre: "Music",
-            date: "2025-06-30",
-            price: 40,
-            relevanceScore: 0.89,
-          },
-          {
-            id: 7,
-            title: "Classical Symphony Night",
-            region: "Downtown",
-            genre: "Music",
-            date: "2025-06-12",
-            price: 50,
-            relevanceScore: 0.85,
-          },
-        ];
-
-        setRegionEvents(mockRegionEvents);
-        setInterestEvents(mockInterestEvents);
+        // Split into two categories for display
+        const midPoint = Math.ceil(mappedEvents.length / 2);
+        setInterestEvents(mappedEvents.slice(0, midPoint));
+        setRegionEvents(mappedEvents.slice(midPoint));
       } catch (error) {
         console.error("Error fetching recommendations:", error);
+        setError('Unable to load recommendations. Please try again later.');
+        // Fallback to empty arrays or show error state
       } finally {
         setLoading(false);
       }
     };
 
     fetchRecommendations();
-  }, []);
+  }, [selectedRegion, selectedGenres]);
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -122,6 +102,23 @@ const Recommendations = () => {
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Curated events based on your location, interests, and what's trending
           </p>
+        </div>
+
+        {/* Error State */}
+        {error && (
+          <div className="mb-8 p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-center">
+            <p className="text-destructive">{error}</p>
+          </div>
+        )}
+
+        {/* Filters */}
+        <div className="mb-8">
+          <FilterBar
+            selectedRegion={selectedRegion}
+            setSelectedRegion={setSelectedRegion}
+            selectedGenres={selectedGenres}
+            setSelectedGenres={setSelectedGenres}
+          />
         </div>
 
         {/* Based on Your Region */}

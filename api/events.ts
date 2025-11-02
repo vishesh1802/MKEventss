@@ -4,8 +4,8 @@ import "dotenv/config";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const { rows } = await sql`SELECT NOW() AS time;`;
-    res.status(200).json({ message: "✅ Connected to DB!", time: rows[0].time });
+    const { rows } = await sql`SELECT * FROM events ORDER BY date LIMIT 20;`;
+    res.status(200).json(rows);
   } catch (error) {
     console.error("❌ DB Error:", error);
     res.status(500).json({ error: (error as Error).message });
