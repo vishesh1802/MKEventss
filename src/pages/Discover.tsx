@@ -23,86 +23,76 @@ const Discover = () => {
   const [loading, setLoading] = useState(true);
   const [selectedRegion, setSelectedRegion] = useState("All");
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+  const [dateRange, setDateRange] = useState<{ start: string; end: string } | undefined>();
 
   useEffect(() => {
     const fetchEvents = async () => {
       setLoading(true);
       try {
-        // Mock data - replace with actual API call to /api/events
-        const mockEvents: Event[] = [
-          {
-            id: 1,
-            title: "Lakefront Music Festival",
-            region: "Downtown",
-            genre: "Music",
-            date: "2025-06-15",
-            price: 45,
-          },
-          {
-            id: 2,
-            title: "Third Ward Art Walk",
-            region: "Third Ward",
-            genre: "Art",
-            date: "2025-05-20",
-            price: 0,
-          },
-          {
-            id: 3,
-            title: "Bay View Jazz Night",
-            region: "Bay View",
-            genre: "Music",
-            date: "2025-05-25",
-            price: 25,
-          },
-          {
-            id: 4,
-            title: "Milwaukee Food & Wine Festival",
-            region: "Downtown",
-            genre: "Food",
-            date: "2025-06-01",
-            price: 65,
-          },
-          {
-            id: 5,
-            title: "Walker's Point Comedy Show",
-            region: "Walker's Point",
-            genre: "Comedy",
-            date: "2025-05-18",
-            price: 20,
-          },
-          {
-            id: 6,
-            title: "East Side Theater Performance",
-            region: "East Side",
-            genre: "Theater",
-            date: "2025-06-10",
-            price: 35,
-          },
-          {
-            id: 7,
-            title: "Summerfest Preview",
-            region: "Downtown",
-            genre: "Festival",
-            date: "2025-06-20",
-            price: 25,
-          },
-          {
-            id: 8,
-            title: "Gallery Night & Day",
-            region: "Third Ward",
-            genre: "Art",
-            date: "2025-05-15",
-            price: 0,
-          },
-        ];
+        console.log('🔍 Discover: Fetching events from API...');
+        const response = await fetch('/api/events');
+        if (!response.ok) {
+          throw new Error(`Failed to fetch events: ${response.status}`);
+        }
+        const data = await response.json();
+        console.log('🔍 Discover: Received', data.length, 'events from API');
+        
+        // Helper function to get region from coordinates
+        const getVenueRegion = (lat: number, lon: number): string | null => {
+          if (lat >= 43.038 && lat <= 43.045 && lon >= -87.92 && lon <= -87.89) {
+            return 'Downtown';
+          }
+          if (lat >= 43.0335 && lat <= 43.0345 && lon >= -87.9335 && lon <= -87.9325) {
+            return 'Third Ward';
+          }
+          if (lat >= 43.0515 && lat <= 43.053 && lon >= -87.906 && lon <= -87.904) {
+            return 'Walker\'s Point';
+          }
+          if (lat >= 43.0755 && lat <= 43.077 && (lon >= -87.881 && lon <= -87.879 || Math.abs(lon - (-87.88)) < 0.001)) {
+            return 'East Side';
+          }
+          return null;
+        };
+        
+        // Map API response to Event format (include both past and future events)
+        const mappedEvents: Event[] = data
+          .map((event: any, idx: number) => {
+            // Skip events without required fields
+            if (!event.event_name || !event.date) {
+              return null;
+            }
+            
+            // Parse M/D/YY date to ISO format
+            let isoDate = event.date;
+            if (event.date && event.date.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
+              const [month, day, year] = event.date.split('/');
+              isoDate = `20${year.padStart(2, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            }
+            
+            // Get region from coordinates
+            const lat = Number(event.latitude);
+            const lon = Number(event.longitude);
+            const venueRegion = (lat && lon && getVenueRegion(lat, lon)) || event.venue_name || 'Milwaukee';
+            
+            return {
+              id: event.id || parseInt(event.event_id?.replace(/\D/g, '') || String(idx + 1)),
+              title: event.event_name || 'Untitled Event',
+              region: venueRegion,
+              genre: event.genre || 'General',
+              date: isoDate || new Date().toISOString().split('T')[0],
+              price: parseFloat(event.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+            };
+          })
+          .filter((event: Event | null) => event !== null) as Event[];
 
         // Apply filters
-        let filtered = mockEvents;
+        let filtered = mappedEvents;
 
         if (searchQuery) {
           filtered = filtered.filter(event =>
             event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            event.genre.toLowerCase().includes(searchQuery.toLowerCase())
+            event.genre.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            event.region.toLowerCase().includes(searchQuery.toLowerCase())
           );
         }
 
@@ -114,16 +104,53 @@ const Discover = () => {
           filtered = filtered.filter(event => selectedGenres.includes(event.genre));
         }
 
+        // Apply date range filter
+        if (dateRange) {
+          filtered = filtered.filter(event => {
+            const eventDate = new Date(event.date);
+            const startDate = new Date(dateRange.start);
+            const endDate = new Date(dateRange.end);
+            startDate.setHours(0, 0, 0, 0);
+            endDate.setHours(23, 59, 59, 999);
+            eventDate.setHours(0, 0, 0, 0);
+            return eventDate >= startDate && eventDate <= endDate;
+          });
+        }
+
+        // Sort by date (future events first, then past events)
+        filtered.sort((a, b) => {
+          const dateA = new Date(a.date).getTime();
+          const dateB = new Date(b.date).getTime();
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const todayTime = today.getTime();
+          const isAPast = dateA < todayTime;
+          const isBPast = dateB < todayTime;
+          
+          // Future events come first
+          if (isAPast && !isBPast) return 1;
+          if (!isAPast && isBPast) return -1;
+          
+          // Within same category, sort by date (future: earliest first, past: most recent first)
+          if (!isAPast && !isBPast) {
+            return dateA - dateB; // Future: earliest first
+          } else {
+            return dateB - dateA; // Past: most recent first
+          }
+        });
+
+        console.log('🔍 Discover: Filtered to', filtered.length, 'events');
         setEvents(filtered);
       } catch (error) {
         console.error("Error fetching events:", error);
+        setEvents([]);
       } finally {
         setLoading(false);
       }
     };
 
     fetchEvents();
-  }, [selectedRegion, selectedGenres, searchQuery]);
+  }, [selectedRegion, selectedGenres, searchQuery, dateRange]);
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -134,7 +161,7 @@ const Discover = () => {
             Discover Events
           </h1>
           <p className="text-muted-foreground">
-            {searchQuery ? `Search results for "${searchQuery}"` : "Explore all upcoming events in Milwaukee"}
+            {searchQuery ? `Search results for "${searchQuery}"` : "Explore all events in Milwaukee - past and upcoming"}
           </p>
         </div>
 
@@ -146,6 +173,8 @@ const Discover = () => {
               setSelectedRegion={setSelectedRegion}
               selectedGenres={selectedGenres}
               setSelectedGenres={setSelectedGenres}
+              dateRange={dateRange}
+              setDateRange={setDateRange}
             />
           </aside>
 

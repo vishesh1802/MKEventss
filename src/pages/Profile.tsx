@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { User, MapPin, Heart, Settings } from "lucide-react";
+import { User, MapPin, Heart, Settings, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSavedEvents } from "@/contexts/SavedEventsContext";
 import { Link } from "react-router-dom";
@@ -19,7 +19,7 @@ const Profile = () => {
   const [userName, setUserName] = useState("Milwaukee Explorer");
   const [selectedRegion, setSelectedRegion] = useState("Downtown");
   const [selectedGenres, setSelectedGenres] = useState(["Music", "Food"]);
-  const { savedEvents } = useSavedEvents();
+  const { savedEvents, attendingEvents } = useSavedEvents();
 
   const handleGenreToggle = (genre: string) => {
     setSelectedGenres(
@@ -150,6 +150,40 @@ const Profile = () => {
           )}
         </div>
 
+        {/* Attending Events */}
+        <section className="mb-12">
+          <div className="flex items-center gap-3 mb-6">
+            <CheckCircle2 className="w-6 h-6 text-primary fill-primary" />
+            <h2 className="text-2xl font-bold text-foreground">
+              Attending Events
+            </h2>
+            <span className="text-muted-foreground">
+              ({attendingEvents.length})
+            </span>
+          </div>
+
+          {attendingEvents.length === 0 ? (
+            <div className="bg-card rounded-xl p-12 text-center">
+              <CheckCircle2 className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                No events marked as attending
+              </h3>
+              <p className="text-muted-foreground mb-6">
+                Click "Attend" on events you plan to go to
+              </p>
+              <Link to="/discover">
+                <Button>Discover Events</Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
+              {attendingEvents.map((event) => (
+                <EventCard key={`attending-${event.id}`} {...event} />
+              ))}
+            </div>
+          )}
+        </section>
+
         {/* Saved Events */}
         <section>
           <div className="flex items-center gap-3 mb-6">
@@ -178,7 +212,7 @@ const Profile = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
               {savedEvents.map((event) => (
-                <EventCard key={event.id} {...event} />
+                <EventCard key={`saved-${event.id}`} {...event} />
               ))}
             </div>
           )}

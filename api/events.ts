@@ -4,7 +4,8 @@ import "dotenv/config";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const { rows } = await sql`SELECT * FROM events ORDER BY date LIMIT 20;`;
+    // Get all events (no limit) - frontend will filter by date
+    const { rows } = await sql`SELECT * FROM events ORDER BY date;`;
     res.status(200).json(rows);
   } catch (error) {
     console.error("❌ DB Error:", error);

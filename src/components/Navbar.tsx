@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
-import { Heart, User, Compass, Home } from "lucide-react";
+import { Heart, User, Compass, Home, Map, LayoutDashboard } from "lucide-react";
 import { Button } from "./ui/button";
+import { ThemeToggle } from "./ThemeToggle";
 
 const Navbar = () => {
   const location = useLocation();
@@ -50,6 +51,24 @@ const Navbar = () => {
                 For You
               </Button>
             </Link>
+            <Link to="/map">
+              <Button
+                variant={isActive("/map") ? "default" : "ghost"}
+                className="gap-2"
+              >
+                <Map className="w-4 h-4" />
+                Map
+              </Button>
+            </Link>
+            <Link to="/dashboard">
+              <Button
+                variant={isActive("/dashboard") ? "default" : "ghost"}
+                className="gap-2"
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                Dashboard
+              </Button>
+            </Link>
             <Link to="/profile">
               <Button
                 variant={isActive("/profile") ? "default" : "ghost"}
@@ -59,6 +78,7 @@ const Navbar = () => {
                 Profile
               </Button>
             </Link>
+            <ThemeToggle />
           </div>
 
           {/* Mobile Navigation */}

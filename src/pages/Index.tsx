@@ -23,49 +23,96 @@ const Index = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate API call - replace with actual API endpoint
     const fetchEvents = async () => {
       try {
-        // Mock data for demo
-        const mockEvents: Event[] = [
-          {
-            id: 1,
-            title: "Lakefront Music Festival",
-            region: "Downtown",
-            genre: "Music",
-            date: "2025-06-15",
-            price: 45,
-          },
-          {
-            id: 2,
-            title: "Third Ward Art Walk",
-            region: "Third Ward",
-            genre: "Art",
-            date: "2025-05-20",
-            price: 0,
-          },
-          {
-            id: 3,
-            title: "Bay View Jazz Night",
-            region: "Bay View",
-            genre: "Music",
-            date: "2025-05-25",
-            price: 25,
-          },
-          {
-            id: 4,
-            title: "Milwaukee Food & Wine Festival",
-            region: "Downtown",
-            genre: "Food",
-            date: "2025-06-01",
-            price: 65,
-          },
-        ];
+        console.log('🏠 Home: Fetching events from API...');
+        const response = await fetch('/api/events');
+        if (!response.ok) {
+          throw new Error(`Failed to fetch events: ${response.status}`);
+        }
+        const data = await response.json();
+        console.log('🏠 Home: Received', data.length, 'events from API');
         
-        setFeaturedEvents(mockEvents.slice(0, 4));
-        setTrendingEvents(mockEvents.slice(0, 3));
+        // Helper function to get region from coordinates
+        const getVenueRegion = (lat: number, lon: number): string | null => {
+          if (lat >= 43.038 && lat <= 43.045 && lon >= -87.92 && lon <= -87.89) {
+            return 'Downtown';
+          }
+          if (lat >= 43.0335 && lat <= 43.0345 && lon >= -87.9335 && lon <= -87.9325) {
+            return 'Third Ward';
+          }
+          if (lat >= 43.0515 && lat <= 43.053 && lon >= -87.906 && lon <= -87.904) {
+            return 'Walker\'s Point';
+          }
+          if (lat >= 43.0755 && lat <= 43.077 && (lon >= -87.881 && lon <= -87.879 || Math.abs(lon - (-87.88)) < 0.001)) {
+            return 'East Side';
+          }
+          return null;
+        };
+        
+        // Map API response to Event format and filter future events
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const mappedEvents: Event[] = data
+          .map((event: any, idx: number) => {
+            // Skip events without required fields
+            if (!event.event_name || !event.date) {
+              console.warn('Skipping event with missing data:', event);
+              return null;
+            }
+            
+            // Parse M/D/YY date to ISO format
+            let isoDate = event.date;
+            if (event.date && event.date.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
+              const [month, day, year] = event.date.split('/');
+              isoDate = `20${year.padStart(2, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            }
+            
+            const eventDate = new Date(isoDate);
+            if (isNaN(eventDate.getTime())) {
+              console.warn('Invalid date for event:', event.event_name, event.date);
+              return null;
+            }
+            eventDate.setHours(0, 0, 0, 0);
+            
+            // Only include today and future events (>= today)
+            // Compare dates as strings to avoid timezone issues
+            const eventDateStr = eventDate.toISOString().split('T')[0];
+            const todayStr = today.toISOString().split('T')[0];
+            if (eventDateStr < todayStr) return null;
+            
+            // Get region from coordinates
+            const lat = Number(event.latitude);
+            const lon = Number(event.longitude);
+            const venueRegion = (lat && lon && getVenueRegion(lat, lon)) || event.venue_name || 'Milwaukee';
+            
+            return {
+              id: event.id || parseInt(event.event_id?.replace(/\D/g, '') || String(idx + 1)),
+              title: event.event_name || 'Untitled Event',
+              region: venueRegion,
+              genre: event.genre || 'General',
+              date: isoDate || new Date().toISOString().split('T')[0],
+              price: parseFloat(event.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+            };
+          })
+          .filter((event: Event | null) => event !== null) as Event[];
+        
+        console.log('🏠 Home: Mapped', mappedEvents.length, 'future events');
+        
+        // Sort by date (earliest first)
+        mappedEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+        // Featured events: first 4
+        setFeaturedEvents(mappedEvents.slice(0, 4));
+        // Trending events: next 3 (or shuffle for variety)
+        setTrendingEvents(mappedEvents.slice(4, 7));
+        
+        console.log('🏠 Home: Set', mappedEvents.slice(0, 4).length, 'featured and', mappedEvents.slice(4, 7).length, 'trending events');
       } catch (error) {
         console.error("Error fetching events:", error);
+        setFeaturedEvents([]);
+        setTrendingEvents([]);
       } finally {
         setLoading(false);
       }

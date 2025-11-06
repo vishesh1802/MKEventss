@@ -26,8 +26,12 @@ const Recommendations = () => {
 
   useEffect(() => {
     const fetchRecommendations = async () => {
+      console.log('🔄 useEffect triggered - Region:', selectedRegion, 'Genres:', selectedGenres);
       setLoading(true);
       setError(null);
+      // Clear previous events immediately when filters change
+      setInterestEvents([]);
+      setRegionEvents([]);
       try {
         // Build query params
         const params = new URLSearchParams({ user_id: 'user_1' });
@@ -38,17 +42,48 @@ const Recommendations = () => {
           params.append('genres', selectedGenres.join(','));
         }
         
-        const response = await fetch(`/api/recommend?${params.toString()}`, {
+        // Add timestamp to prevent caching
+        params.append('_t', Date.now().toString());
+        const apiUrl = `/api/recommend?${params.toString()}`;
+        console.log('Fetching recommendations with filters:', { selectedRegion, selectedGenres, apiUrl });
+        
+        console.log('Making API request to:', apiUrl);
+        const response = await fetch(apiUrl, {
           headers: {
             'Accept': 'application/json',
-          }
+            'Cache-Control': 'no-cache',
+          },
+          cache: 'no-store', // Prevent caching
         });
+        
+        console.log('API response status:', response.status, response.statusText);
+        
         if (!response.ok) {
           const errorText = await response.text();
           console.error('API error:', response.status, errorText);
-          throw new Error('Failed to fetch recommendations');
+          throw new Error(`API returned ${response.status}: ${errorText.substring(0, 100)}`);
+        }
+        
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text();
+          console.error('Unexpected response type:', contentType, text.substring(0, 200));
+          throw new Error('API returned non-JSON response');
         }
         const data = await response.json();
+        console.log('✅ API Response received:', {
+          totalEvents: data.recommendations?.length || 0,
+          region: selectedRegion,
+          genres: selectedGenres,
+          sampleVenues: data.recommendations?.slice(0, 3).map((r: any) => r.venue_name) || []
+        });
+        
+        if (!data.recommendations || data.recommendations.length === 0) {
+          console.warn('⚠️ No recommendations returned from API');
+          setInterestEvents([]);
+          setRegionEvents([]);
+          return;
+        }
         
         // Map API response to Event format
         const mappedEvents: Event[] = data.recommendations.map((rec: any, idx: number) => {
@@ -60,7 +95,7 @@ const Recommendations = () => {
           }
           
           return {
-            id: parseInt(rec.event_id?.replace(/\D/g, '') || String(idx + 1)),
+            id: rec.id || parseInt(rec.event_id?.replace(/\D/g, '') || String(idx + 1)),
             title: rec.event_name || 'Untitled Event',
             region: rec.venue_name || 'Milwaukee',
             genre: rec.genre || 'General',
@@ -72,12 +107,21 @@ const Recommendations = () => {
 
         // Split into two categories for display
         const midPoint = Math.ceil(mappedEvents.length / 2);
-        setInterestEvents(mappedEvents.slice(0, midPoint));
-        setRegionEvents(mappedEvents.slice(midPoint));
-      } catch (error) {
+        const interest = mappedEvents.slice(0, midPoint);
+        const region = mappedEvents.slice(midPoint);
+        console.log('📊 Events split:', {
+          total: mappedEvents.length,
+          interestEvents: interest.length,
+          regionEvents: region.length
+        });
+        setInterestEvents(interest);
+        setRegionEvents(region);
+      } catch (error: any) {
         console.error("Error fetching recommendations:", error);
-        setError('Unable to load recommendations. Please try again later.');
+        setError(`Unable to load recommendations: ${error.message || 'Unknown error'}`);
         // Fallback to empty arrays or show error state
+        setInterestEvents([]);
+        setRegionEvents([]);
       } finally {
         setLoading(false);
       }
@@ -85,6 +129,16 @@ const Recommendations = () => {
 
     fetchRecommendations();
   }, [selectedRegion, selectedGenres]);
+
+  // Debug: Log current state
+  console.log('🎨 Rendering Recommendations:', {
+    loading,
+    error,
+    regionEventsCount: regionEvents.length,
+    interestEventsCount: interestEvents.length,
+    selectedRegion,
+    selectedGenres
+  });
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -132,7 +186,12 @@ const Recommendations = () => {
                 Near You
               </h2>
               <p className="text-sm text-muted-foreground">
-                Events happening in Downtown
+                Events happening {selectedRegion === "All" ? "nearby" : `in ${selectedRegion}`}
+                {selectedRegion !== "All" && (
+                  <span className="ml-2 text-xs bg-primary/20 text-primary px-2 py-1 rounded">
+                    {regionEvents.length} events
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -146,13 +205,18 @@ const Recommendations = () => {
                 />
               ))}
             </div>
-          ) : (
+          ) : regionEvents.length === 0 && !error ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <p>No events found for this region. Try selecting a different region or clearing filters.</p>
+              <p className="text-xs mt-2">Debug: Loading={loading.toString()}, Events={regionEvents.length}</p>
+            </div>
+          ) : regionEvents.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
               {regionEvents.map((event) => (
-                <EventCard key={event.id} {...event} />
+                <EventCard key={`region-${event.id}`} {...event} />
               ))}
             </div>
-          )}
+          ) : null}
         </section>
 
         {/* Based on Your Interests */}
@@ -180,13 +244,18 @@ const Recommendations = () => {
                 />
               ))}
             </div>
-          ) : (
+          ) : interestEvents.length === 0 && !error ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <p>No events found. Try adjusting your filters.</p>
+              <p className="text-xs mt-2">Debug: Loading={loading.toString()}, Events={interestEvents.length}</p>
+            </div>
+          ) : interestEvents.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-fade-in">
               {interestEvents.map((event) => (
-                <EventCard key={event.id} {...event} />
+                <EventCard key={`interest-${event.id}`} {...event} />
               ))}
             </div>
-          )}
+          ) : null}
         </section>
       </main>
       <Footer />

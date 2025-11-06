@@ -26,6 +26,12 @@ type CsvUserHistoryRow = {
 async function main() {
   await createTables();
 
+  // Delete existing events to ensure fresh data
+  console.log('🗑️  Clearing existing events...');
+  await sql`DELETE FROM user_history;`; // Delete user history first (foreign key constraint)
+  await sql`DELETE FROM events;`;
+  console.log('✅ Cleared existing data');
+
   // Load events
   const eventsCsv = fs.readFileSync('./scripts/Event_data.csv', 'utf-8');
   const eventsRecords = parse<CsvEventRow>(eventsCsv, { columns: true, skip_empty_lines: true });
@@ -36,7 +42,16 @@ async function main() {
         INSERT INTO events (event_id, event_name, genre, venue_name, date, latitude, longitude, description, organizer, ticket_price)
         VALUES (${row.event_id}, ${row.event_name}, ${row.genre}, ${row.venue_name}, ${row.date},
                 ${parseFloat(row.latitude)}, ${parseFloat(row.longitude)}, ${row.description}, ${row.organizer}, ${row.ticket_price})
-        ON CONFLICT (event_id) DO NOTHING;
+        ON CONFLICT (event_id) DO UPDATE SET
+          event_name = EXCLUDED.event_name,
+          genre = EXCLUDED.genre,
+          venue_name = EXCLUDED.venue_name,
+          date = EXCLUDED.date,
+          latitude = EXCLUDED.latitude,
+          longitude = EXCLUDED.longitude,
+          description = EXCLUDED.description,
+          organizer = EXCLUDED.organizer,
+          ticket_price = EXCLUDED.ticket_price;
       `;
     } catch (err) {
       console.error('Error inserting event:', row.event_id, err);
