@@ -67,12 +67,14 @@ const EventCard = ({ id, title, region, genre, date, price, image }: EventCardPr
               e.preventDefault();
               toggleSaveEvent({ id, title, region, genre, date, price });
             }}
-            className="w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center transition-smooth hover:scale-110 active:scale-95"
+            className="w-10 h-10 bg-white/90 dark:bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center transition-smooth hover:scale-110 active:scale-95"
             title={isSaved ? "Remove from favorites" : "Add to favorites"}
           >
             <Heart 
               className={`w-5 h-5 transition-smooth ${
-                isSaved ? "fill-secondary text-secondary" : "text-foreground"
+                isSaved 
+                  ? "fill-secondary text-secondary" 
+                  : "text-gray-700 dark:text-white"
               }`}
             />
           </button>
@@ -86,18 +88,20 @@ const EventCard = ({ id, title, region, genre, date, price, image }: EventCardPr
               }
             }}
             disabled={isPast}
-            className={`w-10 h-10 backdrop-blur-sm rounded-full flex items-center justify-center transition-smooth ${
+              className={`w-10 h-10 backdrop-blur-sm rounded-full flex items-center justify-center transition-smooth ${
               isPast 
-                ? "bg-white/50 text-muted-foreground cursor-not-allowed" 
+                ? "bg-white/50 dark:bg-white/10 text-muted-foreground cursor-not-allowed" 
                 : isAttending 
                 ? "bg-primary/90 text-white hover:scale-110 active:scale-95" 
-                : "bg-white/90 text-foreground hover:scale-110 active:scale-95"
+                : "bg-white/90 dark:bg-white/20 text-foreground hover:scale-110 active:scale-95"
             }`}
             title={isPast ? "Event has ended" : isAttending ? "Remove from attending" : "Mark as attending"}
           >
             <CheckCircle2 
               className={`w-5 h-5 transition-smooth ${
-                isAttending ? "fill-white text-white" : ""
+                isAttending 
+                  ? "fill-white text-white" 
+                  : "text-gray-700 dark:text-white"
               }`}
             />
           </button>
@@ -105,7 +109,7 @@ const EventCard = ({ id, title, region, genre, date, price, image }: EventCardPr
 
         {/* Genre Badge */}
         <div className="absolute bottom-3 left-3">
-          <Badge className="bg-white/90 backdrop-blur-sm text-foreground">
+          <Badge className="bg-black/80 dark:bg-black/80 backdrop-blur-md text-white border-0 shadow-lg px-3 py-1">
             {genre}
           </Badge>
         </div>

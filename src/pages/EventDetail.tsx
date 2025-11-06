@@ -328,10 +328,24 @@ const EventDetail = () => {
       <Navbar />
       <main className="flex-1">
         {/* Hero Banner */}
-        <div className="relative h-96 gradient-hero">
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Calendar className="w-32 h-32 text-white/20" />
-          </div>
+        <div className="relative h-96 overflow-hidden">
+          {event.image ? (
+            <img 
+              src={event.image} 
+              alt={event.title}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="relative h-full w-full gradient-hero">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Calendar className="w-32 h-32 text-white/20" />
+              </div>
+            </div>
+          )}
+          {/* Overlay for better text readability if image exists */}
+          {event.image && (
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+          )}
         </div>
 
         {/* Event Details */}
