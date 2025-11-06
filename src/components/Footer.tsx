@@ -65,7 +65,7 @@ const Footer = () => {
 
         <div className="border-t border-border mt-8 pt-8 text-center text-sm text-muted-foreground">
           <p className="flex items-center justify-center gap-1">
-            Made with <Heart className="w-4 h-4 text-secondary fill-secondary" /> in Milwaukee
+            Made with <Heart className="w-4 h-4 text-secondary fill-secondary" /> by Vishesh
           </p>
           <p className="mt-2">© 2025 MKE Discover. All rights reserved.</p>
         </div>
