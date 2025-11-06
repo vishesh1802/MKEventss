@@ -24,11 +24,11 @@ export function generateICalendar(event: {
   return [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//MKE Discover//Event Calendar//EN',
+    'PRODID:-//MKEvents//Event Calendar//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     'BEGIN:VEVENT',
-    `UID:${Date.now()}@mkediscover.com`,
+    `UID:${Date.now()}@mkevents.com`,
     `DTSTAMP:${formatDate(new Date())}`,
     `DTSTART:${formatDate(eventDate)}`,
     `DTEND:${formatDate(endDate)}`,

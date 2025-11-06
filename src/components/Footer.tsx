@@ -12,7 +12,7 @@ const Footer = () => {
                 <span className="text-white font-bold text-xl">M</span>
               </div>
               <span className="text-xl font-bold">
-                MKE <span className="text-primary">Discover</span>
+                <span className="text-primary">MK</span>Events
               </span>
             </div>
             <p className="text-muted-foreground text-sm leading-relaxed">
@@ -57,7 +57,7 @@ const Footer = () => {
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Mail className="w-4 h-4 text-primary" />
-                hello@mkediscover.com
+                hello@mkevents.com
               </div>
             </div>
           </div>
@@ -67,7 +67,7 @@ const Footer = () => {
           <p className="flex items-center justify-center gap-1">
             Made with <Heart className="w-4 h-4 text-secondary fill-secondary" /> by Vishesh
           </p>
-          <p className="mt-2">© 2025 MKE Discover. All rights reserved.</p>
+          <p className="mt-2">© 2025 MKEvents. All rights reserved.</p>
         </div>
       </div>
     </footer>

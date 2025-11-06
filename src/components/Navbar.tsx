@@ -18,7 +18,7 @@ const Navbar = () => {
               <span className="text-white font-bold text-xl">M</span>
             </div>
             <span className="text-xl font-bold text-foreground">
-              MKE <span className="text-primary">Discover</span>
+              <span className="text-primary">MK</span>Events
             </span>
           </Link>
 
