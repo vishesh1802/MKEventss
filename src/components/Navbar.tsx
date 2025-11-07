@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Heart, User, Compass, Home, Map, LayoutDashboard } from "lucide-react";
+import { Heart, User, Compass, Home, Map, LayoutDashboard, GitCompare } from "lucide-react";
 import { Button } from "./ui/button";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -60,6 +60,15 @@ const Navbar = () => {
                 Map
               </Button>
             </Link>
+            <Link to="/compare">
+              <Button
+                variant={isActive("/compare") ? "default" : "ghost"}
+                className="gap-2"
+              >
+                <GitCompare className="w-4 h-4" />
+                Compare
+              </Button>
+            </Link>
             <Link to="/dashboard">
               <Button
                 variant={isActive("/dashboard") ? "default" : "ghost"}
@@ -86,6 +95,11 @@ const Navbar = () => {
             <Link to="/discover">
               <Button variant="ghost" size="icon">
                 <Compass className="w-5 h-5" />
+              </Button>
+            </Link>
+            <Link to="/compare">
+              <Button variant="ghost" size="icon">
+                <GitCompare className="w-5 h-5" />
               </Button>
             </Link>
             <Link to="/profile">
