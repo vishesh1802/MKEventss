@@ -20,6 +20,8 @@ MKEvents is a modern, responsive web application that helps you discover and man
 - **Event Details**: Comprehensive event pages with images, descriptions, and organizer info
 
 ### User Features
+- **User Authentication**: Sign up and log in to save your preferences
+- **Multiple Profiles**: Create and switch between multiple user profiles
 - **Save Events**: Bookmark events for later
 - **Attend Events**: Mark events you plan to attend
 - **User Profile**: Manage your saved and attending events
@@ -62,16 +64,24 @@ MKEvents is a modern, responsive web application that helps you discover and man
 
 3. **Set up environment variables**
    
-   Create a `.env` file in the root directory:
+   Create a `.env` or `.env.local` file in the root directory:
    ```env
    POSTGRES_URL=your_vercel_postgres_url
    POSTGRES_PRISMA_URL=your_vercel_postgres_prisma_url
    POSTGRES_URL_NON_POOLING=your_vercel_postgres_non_pooling_url
+   PASSWORD_SALT=your_secure_random_salt_string
    ```
+   
+   **Note**: `PASSWORD_SALT` is optional for development but recommended. Generate a random string for production.
 
 4. **Set up the database**
    
-   Run the setup script to populate the database with event data:
+   Initialize database tables (creates users, profiles, sessions tables):
+   ```sh
+   npx tsx scripts/init-db.ts
+   ```
+   
+   Then populate the database with event data:
    ```sh
    npm run upload-data
    ```
@@ -100,8 +110,14 @@ npm run dev
 ```
 MKEventsss/
 ├── api/                 # API routes (Vercel serverless functions)
+│   ├── auth/           # Authentication endpoints
+│   │   ├── login.ts    # User login
+│   │   ├── signup.ts   # User registration
+│   │   ├── logout.ts   # User logout
+│   │   └── me.ts       # Get current user
 │   ├── events/         # Event-related endpoints
 │   ├── events.ts       # Get all events
+│   ├── profiles.ts     # User profile management
 │   └── recommend.ts    # Event recommendations
 ├── src/
 │   ├── components/     # React components
@@ -111,12 +127,15 @@ MKEventsss/
 │   │   ├── Navbar.tsx
 │   │   └── Footer.tsx
 │   ├── contexts/       # React contexts
-│   │   └── SavedEventsContext.tsx
+│   │   ├── AuthContext.tsx        # Authentication state
+│   │   ├── ProfileContext.tsx     # User profile management
+│   │   └── SavedEventsContext.tsx # Saved events state
 │   ├── pages/          # Page components
 │   │   ├── Index.tsx
 │   │   ├── Discover.tsx
 │   │   ├── Recommendations.tsx
 │   │   ├── EventDetail.tsx
+│   │   ├── Login.tsx
 │   │   ├── Profile.tsx
 │   │   ├── MapView.tsx
 │   │   ├── CompareEvents.tsx
@@ -162,6 +181,7 @@ MKEventsss/
 - `/discover` - Browse all events with advanced filters
 - `/recommendations` - AI-powered event recommendations
 - `/events/:id` - Event detail page
+- `/login` - User authentication (sign up and login)
 - `/profile` - User profile with saved and attending events
 - `/map` - Interactive map view of events
 - `/compare` - Compare multiple events
@@ -184,6 +204,9 @@ Events are mapped to regions based on venue coordinates:
 - **East Side**: lat 43.0755-43.077, lon -87.881 to -87.879
 
 ### Data Storage
+- **User Accounts**: Stored in Vercel Postgres database (users table)
+- **User Profiles**: Stored in Vercel Postgres database (user_profiles table) for authenticated users, localStorage for guests
+- **User Sessions**: Stored in Vercel Postgres database (user_sessions table)
 - **Saved Events**: Stored in browser localStorage
 - **Attending Events**: Stored in browser localStorage
 - **Event Data**: Stored in Vercel Postgres database
@@ -206,8 +229,16 @@ Events are mapped to regions based on venue coordinates:
    - Deploy!
 
 3. **Set up Database**
-   - Create a Vercel Postgres database
-   - Run the setup script: `npm run upload-data`
+   - Create a Vercel Postgres database in Vercel Dashboard
+   - Add environment variables in Vercel:
+     - `POSTGRES_URL` (automatically added when you create Postgres database)
+     - `PASSWORD_SALT` (generate a random string)
+   - After deployment, initialize database tables:
+     ```sh
+     vercel env pull
+     npx tsx scripts/init-db.ts
+     npm run upload-data
+     ```
 
 The app will be automatically deployed on every push to the main branch.
 
