@@ -1,12 +1,35 @@
-import { Link, useLocation } from "react-router-dom";
-import { Heart, User, Compass, Home, Map, LayoutDashboard, GitCompare } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Heart, User, Compass, Home, Map, LayoutDashboard, GitCompare, Users, LogIn, LogOut } from "lucide-react";
 import { Button } from "./ui/button";
 import { ThemeToggle } from "./ThemeToggle";
+import { useProfile } from "@/contexts/ProfileContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "./ui/dropdown-menu";
 
 const Navbar = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { currentProfile, profiles, switchProfile } = useProfile();
+  const { user, isAuthenticated, logout } = useAuth();
   
   const isActive = (path: string) => location.pathname === path;
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast.success("Logged out successfully");
+      navigate("/");
+    } catch (error) {
+      toast.error("Failed to logout");
+    }
+  };
   
   return (
     <nav className="sticky top-0 z-50 bg-card/80 backdrop-blur-lg border-b border-border">
@@ -78,15 +101,69 @@ const Navbar = () => {
                 Dashboard
               </Button>
             </Link>
-            <Link to="/profile">
-              <Button
-                variant={isActive("/profile") ? "default" : "ghost"}
-                className="gap-2"
-              >
-                <User className="w-4 h-4" />
-                Profile
-              </Button>
-            </Link>
+            {isAuthenticated ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant={isActive("/profile") ? "default" : "ghost"}
+                    className="gap-2"
+                  >
+                    <User className="w-4 h-4" />
+                    {user?.name || currentProfile?.name || "Profile"}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  {user && (
+                    <>
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        {user.email}
+                      </div>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  <Link to="/profile">
+                    <DropdownMenuItem>
+                      <User className="w-4 h-4 mr-2" />
+                      View Profile
+                    </DropdownMenuItem>
+                  </Link>
+                  {profiles.length > 1 && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                        Switch Profile
+                      </div>
+                      {profiles.map((profile) => (
+                        <DropdownMenuItem
+                          key={profile.id}
+                          onClick={() => switchProfile(profile.id)}
+                          className={currentProfile?.id === profile.id ? "bg-primary/10" : ""}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span>{profile.name}</span>
+                            {currentProfile?.id === profile.id && (
+                              <span className="text-xs text-primary">Active</span>
+                            )}
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout}>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Link to="/login">
+                <Button variant="ghost" className="gap-2">
+                  <LogIn className="w-4 h-4" />
+                  Login
+                </Button>
+              </Link>
+            )}
             <ThemeToggle />
           </div>
 

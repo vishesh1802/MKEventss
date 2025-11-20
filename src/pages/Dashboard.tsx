@@ -38,7 +38,8 @@ const Dashboard = () => {
     const fetchData = async () => {
       try {
         // Fetch recommended events
-        const recResponse = await fetch('/api/recommend?user_id=user_1');
+        const userId = 'user_1';
+        const recResponse = await fetch(`/api/recommend?user_id=${userId}`);
         if (recResponse.ok) {
           const recData = await recResponse.json();
           const mapped = (recData.recommendations || []).slice(0, 6).map((r: any, idx: number) => {

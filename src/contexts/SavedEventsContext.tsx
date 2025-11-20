@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from "react";
 import { toast } from "sonner";
+import { ProfileContext } from "./ProfileContext";
 
 interface SavedEvent {
   id: number;
@@ -22,23 +23,55 @@ interface SavedEventsContextType {
 const SavedEventsContext = createContext<SavedEventsContextType | undefined>(undefined);
 
 export const SavedEventsProvider = ({ children }: { children: ReactNode }) => {
+  // Access ProfileContext directly
+  const profileContext = useContext(ProfileContext);
+  const currentProfileId = profileContext?.currentProfileId || null;
+  
+  const getStorageKey = (key: string) => {
+    return currentProfileId ? `${key}_${currentProfileId}` : key;
+  };
+
   const [savedEvents, setSavedEvents] = useState<SavedEvent[]>(() => {
-    const stored = localStorage.getItem("savedEvents");
+    if (!currentProfileId) return [];
+    const stored = localStorage.getItem(getStorageKey("savedEvents"));
     return stored ? JSON.parse(stored) : [];
   });
 
   const [attendingEvents, setAttendingEvents] = useState<SavedEvent[]>(() => {
-    const stored = localStorage.getItem("attendingEvents");
+    if (!currentProfileId) return [];
+    const stored = localStorage.getItem(getStorageKey("attendingEvents"));
     return stored ? JSON.parse(stored) : [];
   });
 
+  // Reload events when profile changes
   useEffect(() => {
-    localStorage.setItem("savedEvents", JSON.stringify(savedEvents));
-  }, [savedEvents]);
+    if (!currentProfileId) {
+      setSavedEvents([]);
+      setAttendingEvents([]);
+      return;
+    }
+    
+    const savedKey = getStorageKey("savedEvents");
+    const attendingKey = getStorageKey("attendingEvents");
+    
+    const saved = localStorage.getItem(savedKey);
+    const attending = localStorage.getItem(attendingKey);
+    
+    setSavedEvents(saved ? JSON.parse(saved) : []);
+    setAttendingEvents(attending ? JSON.parse(attending) : []);
+  }, [currentProfileId]);
 
   useEffect(() => {
-    localStorage.setItem("attendingEvents", JSON.stringify(attendingEvents));
-  }, [attendingEvents]);
+    if (currentProfileId) {
+      localStorage.setItem(getStorageKey("savedEvents"), JSON.stringify(savedEvents));
+    }
+  }, [savedEvents, currentProfileId]);
+
+  useEffect(() => {
+    if (currentProfileId) {
+      localStorage.setItem(getStorageKey("attendingEvents"), JSON.stringify(attendingEvents));
+    }
+  }, [attendingEvents, currentProfileId]);
 
   const toggleSaveEvent = (event: SavedEvent) => {
     setSavedEvents((prev) => {

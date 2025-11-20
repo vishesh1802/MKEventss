@@ -23,6 +23,18 @@ export async function createTables() {
       ticket_price TEXT
     );
   `;
+  // Create users table for authentication
+  await sql`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+  
   // Create user_history for recommendations if it doesn't exist
   await sql`
     CREATE TABLE IF NOT EXISTS user_history (
@@ -34,11 +46,41 @@ export async function createTables() {
       UNIQUE (user_id, event_id)
     );
   `;
+  
+  // Create user_profiles table for storing user profiles
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      profile_id VARCHAR(255) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      region VARCHAR(255) NOT NULL,
+      genres TEXT[] DEFAULT '{}',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, profile_id)
+    );
+  `;
+  
+  // Create user_sessions table for managing login sessions
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      session_token VARCHAR(255) UNIQUE NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
   // Helpful indexes to speed up lookups
   await sql`CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);`;
   await sql`CREATE INDEX IF NOT EXISTS idx_events_genre ON events(genre);`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`;
   await sql`CREATE INDEX IF NOT EXISTS idx_user_history_user ON user_history(user_id);`;
   await sql`CREATE INDEX IF NOT EXISTS idx_user_history_user_event ON user_history(user_id, event_id);`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_user_profiles_user ON user_profiles(user_id);`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);`;
   console.log('✅ Tables ensured');
 }
 

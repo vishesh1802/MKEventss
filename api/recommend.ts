@@ -103,12 +103,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       region = decodeURIComponent(region.replace(/\+/g, ' '));
     }
     
-    console.log('API received region:', region, 'from query:', req.query.region);
-    
     const genresParam = req.query.genres;
     const genres: string[] = Array.isArray(genresParam)
       ? genresParam.flatMap(g => g.split(','))
       : (genresParam ? genresParam.split(',') : []);
+
+    console.log('🎯 Recommendation request:', {
+      user_id,
+      region,
+      genres,
+      genresCount: genres.length
+    });
 
     // Compute date range (today → +5 days)
     const today = new Date();
@@ -128,74 +133,133 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         WHERE u.user_id = ${user_id}
         LIMIT 10;
       `;
-      userHistory = result.rows;
-    } catch (historyError: any) {
-      console.error('Error fetching user history:', historyError.message);
-      // Return empty recommendations if no history instead of error
-      return res.status(200).json({
-        user: user_id,
-        date_range: { from: todayStr, to: fiveDaysStr },
-        recommendations: [],
-        message: "No history found for this user."
-      });
+      userHistory = result.rows || [];
+    } catch (error: any) {
+      // Continue without history - we'll show all events instead
+      userHistory = [];
+    }
+
+    // 2️⃣ Get all events, then filter in memory (safer for Vercel Postgres)
+    let allEvents: any[] = [];
+    try {
+      const { rows } = await sql`SELECT * FROM events;`;
+      allEvents = rows || [];
+      
+      // If no events found, return empty recommendations
+      if (!allEvents || allEvents.length === 0) {
+        return res.status(200).json({
+          user: user_id,
+          date_range: { from: todayStr, to: fiveDaysStr },
+          recommendations: [],
+        });
+      }
+    } catch (eventsError: any) {
+      console.error("❌ Error fetching events:", eventsError);
+      console.error("Error code:", eventsError?.code);
+      console.error("Error message:", eventsError?.message);
+      // If table doesn't exist or query fails, return empty recommendations
+      if (eventsError?.code === '42P01' || 
+          eventsError?.message?.includes('does not exist') ||
+          eventsError?.message?.includes('relation') && eventsError?.message?.includes('does not exist')) {
+        return res.status(200).json({
+          user: user_id,
+          date_range: { from: todayStr, to: fiveDaysStr },
+          recommendations: [],
+        });
+      }
+      throw eventsError;
     }
 
     if (userHistory.length === 0) {
+      // If no user history, return all future events (or filtered events)
+      const futureEvents = allEvents.filter(ev => {
+        try {
+          return ev.date && isFutureEvent(ev.date);
+        } catch {
+          return false;
+        }
+      });
+      
+      // Apply filters
+      let filteredEvents = futureEvents;
+      if (region) {
+        filteredEvents = filteredEvents.filter(ev => {
+          try {
+            const lat = ev.latitude != null ? Number(ev.latitude) : null;
+            const lon = ev.longitude != null ? Number(ev.longitude) : null;
+            if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return false;
+            const venueRegion = getVenueRegion(lat, lon);
+            return venueRegion === region;
+          } catch {
+            return false;
+          }
+        });
+      }
+      if (genres.length > 0) {
+        filteredEvents = filteredEvents.filter(ev => {
+          if (!ev.genre) return false;
+          // Case-insensitive matching and handle partial matches (e.g., "Food" matches "Food & Drink")
+          return genres.some(selectedGenre => {
+            const evGenreLower = ev.genre.toLowerCase().trim();
+            const selectedGenreLower = selectedGenre.toLowerCase().trim();
+            // Exact match
+            if (evGenreLower === selectedGenreLower) return true;
+            // Partial match: if selected genre is contained in event genre or vice versa
+            if (evGenreLower.includes(selectedGenreLower) || selectedGenreLower.includes(evGenreLower)) return true;
+            return false;
+          });
+        });
+      }
+      
+      // Return events with default scores
+      const recommendations = filteredEvents
+        .map(ev => ({
+          ...ev,
+          similarity_score: 0.5, // Default score when no history
+        }))
+        .slice(0, 50);
+      
       return res.status(200).json({
         user: user_id,
         date_range: { from: todayStr, to: fiveDaysStr },
-        recommendations: [],
-        message: "No history found for this user."
+        recommendations,
       });
     }
-
-        // 2️⃣ Get all events, then filter in memory (safer for Vercel Postgres)
-        const result = await sql`
-          SELECT id, event_id, event_name, genre, latitude, longitude, date, ticket_price, venue_name, description
-          FROM events;
-        `;
-    let allEvents = result.rows;
     
     // Filter out past events - only show events from today onwards
     const beforeDateFilter = allEvents.length;
-    allEvents = allEvents.filter(ev => isFutureEvent(ev.date));
-    console.log(`Date filter (future events only): ${beforeDateFilter} -> ${allEvents.length} events`);
-    
+    allEvents = allEvents.filter(ev => {
+      try {
+        return ev.date && isFutureEvent(ev.date);
+      } catch {
+        return false;
+      }
+    });
     // Apply filters
     if (region) {
-      const beforeCount = allEvents.length;
-      // Debug: check a few sample venues
-      const sampleVenues = allEvents.slice(0, 5).map(ev => ({
-        venue: ev.venue_name,
-        lat: ev.latitude,
-        lon: ev.longitude,
-        region: getVenueRegion(Number(ev.latitude), Number(ev.longitude))
-      }));
-      console.log(`Sample venues before filter:`, sampleVenues);
-      console.log(`Looking for region: "${region}"`);
-      
       allEvents = allEvents.filter(ev => {
-        const venueRegion = getVenueRegion(Number(ev.latitude), Number(ev.longitude));
+        const lat = ev.latitude != null ? Number(ev.latitude) : null;
+        const lon = ev.longitude != null ? Number(ev.longitude) : null;
+        if (lat == null || lon == null) return false;
+        const venueRegion = getVenueRegion(lat, lon);
         return venueRegion === region;
       });
-      console.log(`Region filter "${region}": ${beforeCount} -> ${allEvents.length} events`);
-      
-      if (allEvents.length === 0 && beforeCount > 0) {
-        // Debug: show what regions we actually have
-        const uniqueRegions = new Set();
-        const futureEvents = result.rows.filter(ev => isFutureEvent(ev.date));
-        futureEvents.forEach(ev => {
-          const r = getVenueRegion(Number(ev.latitude), Number(ev.longitude));
-          if (r) uniqueRegions.add(r);
-        });
-        console.log(`Available regions in future events:`, Array.from(uniqueRegions));
-      }
     }
     
     if (genres.length > 0) {
-      const beforeCount = allEvents.length;
-      allEvents = allEvents.filter(ev => genres.includes(ev.genre));
-      console.log(`Genre filter "${genres.join(',')}": ${beforeCount} -> ${allEvents.length} events`);
+      allEvents = allEvents.filter(ev => {
+        if (!ev.genre) return false;
+        // Case-insensitive matching and handle partial matches (e.g., "Food" matches "Food & Drink")
+        return genres.some(selectedGenre => {
+          const evGenreLower = ev.genre.toLowerCase().trim();
+          const selectedGenreLower = selectedGenre.toLowerCase().trim();
+          // Exact match
+          if (evGenreLower === selectedGenreLower) return true;
+          // Partial match: if selected genre is contained in event genre or vice versa
+          if (evGenreLower.includes(selectedGenreLower) || selectedGenreLower.includes(evGenreLower)) return true;
+          return false;
+        });
+      });
     }
 
     // 3️⃣ Compute similarity scores
@@ -203,60 +267,107 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .map((ev) => {
         let score = 0;
 
-        for (const past of userHistory) {
-          const genreScore = genreSimilarity(past.genre, ev.genre);
-          const dist = distance(
-            Number(past.latitude),
-            Number(past.longitude),
-            Number(ev.latitude),
-            Number(ev.longitude)
-          );
-          const regionScore = dist < 10 ? 1 : dist < 50 ? 0.8 : 0.3;
-          score += genreScore * 0.7 + regionScore * 0.3;
+        if (userHistory.length > 0) {
+          for (const past of userHistory) {
+            const genreScore = genreSimilarity(past.genre, ev.genre);
+            const pastLat = past.latitude != null ? Number(past.latitude) : null;
+            const pastLon = past.longitude != null ? Number(past.longitude) : null;
+            const evLat = ev.latitude != null ? Number(ev.latitude) : null;
+            const evLon = ev.longitude != null ? Number(ev.longitude) : null;
+            
+            if (pastLat != null && pastLon != null && evLat != null && evLon != null) {
+              const dist = distance(pastLat, pastLon, evLat, evLon);
+              const regionScore = dist < 10 ? 1 : dist < 50 ? 0.8 : 0.3;
+              score += genreScore * 0.7 + regionScore * 0.3;
+            } else {
+              // If coordinates are missing, just use genre score
+              score += genreScore;
+            }
+          }
+          if (userHistory.length > 0) {
+            score = score / userHistory.length;
+          }
+        } else {
+          // Default score when no history
+          score = 0.5;
         }
 
         return {
           ...ev,
-          similarity_score: score / userHistory.length,
+          similarity_score: score,
         };
       })
       .sort((a, b) => b.similarity_score - a.similarity_score);
 
     // If multiple genres are selected, interleave results to show diversity
-    if (genres.length > 1) {
-      const groupedByGenre: { [key: string]: any[] } = {};
-      recommendations.forEach((ev: any) => {
-        const genre = ev.genre;
-        if (!groupedByGenre[genre]) {
-          groupedByGenre[genre] = [];
-        }
-        groupedByGenre[genre].push(ev);
+    if (genres.length > 1 && recommendations.length > 0) {
+      // Group events by matching selected genre (handle partial matches)
+      const groupedBySelectedGenre: { [key: string]: any[] } = {};
+      genres.forEach(selectedGenre => {
+        groupedBySelectedGenre[selectedGenre] = [];
       });
-
-      // Interleave events from each genre
-      const interleaved: any[] = [];
-      const maxLength = Math.max(...Object.values(groupedByGenre).map(arr => arr.length));
       
-      for (let i = 0; i < maxLength; i++) {
-        genres.forEach(genre => {
-          if (groupedByGenre[genre] && groupedByGenre[genre][i]) {
-            interleaved.push(groupedByGenre[genre][i]);
+      recommendations.forEach((ev: any) => {
+        if (!ev.genre) return;
+        const evGenreLower = ev.genre.toLowerCase().trim();
+        // Find which selected genre(s) this event matches
+        genres.forEach(selectedGenre => {
+          const selectedGenreLower = selectedGenre.toLowerCase().trim();
+          if (evGenreLower === selectedGenreLower || 
+              evGenreLower.includes(selectedGenreLower) || 
+              selectedGenreLower.includes(evGenreLower)) {
+            groupedBySelectedGenre[selectedGenre].push(ev);
           }
         });
-      }
+      });
+
+      console.log('🎭 Genre grouping:', Object.keys(groupedBySelectedGenre).map(genre => ({
+        genre,
+        count: groupedBySelectedGenre[genre].length
+      })));
+
+      // Interleave events from each selected genre
+      const interleaved: any[] = [];
+      const genreLengths = Object.values(groupedBySelectedGenre).map(arr => arr.length);
+      const maxLength = genreLengths.length > 0 ? Math.max(...genreLengths) : 0;
       
-      recommendations = interleaved.slice(0, 50);
+      if (maxLength > 0) {
+        for (let i = 0; i < maxLength; i++) {
+          genres.forEach(selectedGenre => {
+            if (groupedBySelectedGenre[selectedGenre] && groupedBySelectedGenre[selectedGenre][i]) {
+              interleaved.push(groupedBySelectedGenre[selectedGenre][i]);
+            }
+          });
+        }
+        recommendations = interleaved.slice(0, 50);
+      }
     } else {
       recommendations = recommendations.slice(0, 50);
     }
+    
+    console.log('📊 Final recommendations:', {
+      total: recommendations.length,
+      genres: Array.from(new Set(recommendations.map((r: any) => r.genre))),
+      selectedGenres: genres
+    });
 
     return res.status(200).json({
       user: user_id,
       date_range: { from: todayStr, to: fiveDaysStr },
       recommendations,
     });
-  } catch (err: any) {
-    console.error(err);
-    return res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    console.error("❌ Recommendation API Error:", error);
+    console.error("Error message:", error?.message);
+    console.error("Error code:", error?.code);
+    console.error("Error stack:", error?.stack);
+    
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: error?.message || "Internal server error",
+        code: error?.code,
+        details: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+      });
+    }
   }
 }

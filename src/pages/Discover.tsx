@@ -24,6 +24,7 @@ const Discover = () => {
   const [selectedRegion, setSelectedRegion] = useState("All");
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | undefined>();
+  const [priceRange, setPriceRange] = useState<{ min: number; max: number } | undefined>();
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -88,6 +89,12 @@ const Discover = () => {
         // Apply filters
         let filtered = mappedEvents;
 
+        console.log('🔍 Discover: Applying filters', {
+          selectedRegion,
+          selectedGenres,
+          totalEvents: mappedEvents.length
+        });
+
         if (searchQuery) {
           filtered = filtered.filter(event =>
             event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -97,11 +104,28 @@ const Discover = () => {
         }
 
         if (selectedRegion !== "All") {
-          filtered = filtered.filter(event => event.region === selectedRegion);
+          const beforeRegion = filtered.length;
+          filtered = filtered.filter(event => {
+            // Exact match first
+            if (event.region === selectedRegion) return true;
+            // Case-insensitive match for better compatibility
+            if (event.region.toLowerCase() === selectedRegion.toLowerCase()) return true;
+            // For Third Ward, also check if region contains "third ward"
+            if (selectedRegion === "Third Ward" && event.region.toLowerCase().includes("third ward")) return true;
+            return false;
+          });
+          console.log(`🔍 Region filter "${selectedRegion}": ${beforeRegion} -> ${filtered.length} events`);
         }
 
         if (selectedGenres.length > 0) {
-          filtered = filtered.filter(event => selectedGenres.includes(event.genre));
+          const beforeGenre = filtered.length;
+          filtered = filtered.filter(event => {
+            // Case-insensitive genre matching
+            return selectedGenres.some(selectedGenre => 
+              event.genre.toLowerCase() === selectedGenre.toLowerCase()
+            );
+          });
+          console.log(`🔍 Genre filter [${selectedGenres.join(', ')}]: ${beforeGenre} -> ${filtered.length} events`);
         }
 
         // Apply date range filter
@@ -114,6 +138,16 @@ const Discover = () => {
             endDate.setHours(23, 59, 59, 999);
             eventDate.setHours(0, 0, 0, 0);
             return eventDate >= startDate && eventDate <= endDate;
+          });
+        }
+
+        // Apply price range filter
+        if (priceRange) {
+          filtered = filtered.filter(event => {
+            const price = event.price || 0;
+            const min = priceRange.min !== undefined ? priceRange.min : 0;
+            const max = priceRange.max !== undefined && priceRange.max !== Infinity ? priceRange.max : Infinity;
+            return price >= min && price <= max;
           });
         }
 
@@ -150,7 +184,7 @@ const Discover = () => {
     };
 
     fetchEvents();
-  }, [selectedRegion, selectedGenres, searchQuery, dateRange]);
+  }, [selectedRegion, selectedGenres, searchQuery, dateRange, priceRange]);
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -167,7 +201,7 @@ const Discover = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Filters Sidebar */}
-          <aside className="lg:col-span-1">
+          <aside className="lg:col-span-1 lg:sticky lg:top-4 lg:self-start">
             <FilterBar
               selectedRegion={selectedRegion}
               setSelectedRegion={setSelectedRegion}
@@ -175,6 +209,8 @@ const Discover = () => {
               setSelectedGenres={setSelectedGenres}
               dateRange={dateRange}
               setDateRange={setDateRange}
+              priceRange={priceRange}
+              setPriceRange={setPriceRange}
             />
           </aside>
 

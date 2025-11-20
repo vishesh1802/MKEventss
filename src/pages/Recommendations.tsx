@@ -4,6 +4,7 @@ import Footer from "@/components/Footer";
 import EventCard from "@/components/EventCard";
 import FilterBar from "@/components/FilterBar";
 import { Sparkles, MapPin, Heart } from "lucide-react";
+import { useProfile } from "@/contexts/ProfileContext";
 
 interface Event {
   id: number;
@@ -17,12 +18,27 @@ interface Event {
 }
 
 const Recommendations = () => {
+  const { currentProfile } = useProfile();
   const [regionEvents, setRegionEvents] = useState<Event[]>([]);
   const [interestEvents, setInterestEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedRegion, setSelectedRegion] = useState("All");
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+  
+  // Initialize filters from profile preferences
+  const [selectedRegion, setSelectedRegion] = useState(() => {
+    return currentProfile?.region || "All";
+  });
+  const [selectedGenres, setSelectedGenres] = useState<string[]>(() => {
+    return currentProfile?.genres || [];
+  });
+
+  // Update filters when profile changes
+  useEffect(() => {
+    if (currentProfile) {
+      setSelectedRegion(currentProfile.region || "All");
+      setSelectedGenres(currentProfile.genres || []);
+    }
+  }, [currentProfile?.id]);
 
   useEffect(() => {
     const fetchRecommendations = async () => {
@@ -34,7 +50,8 @@ const Recommendations = () => {
       setRegionEvents([]);
       try {
         // Build query params
-        const params = new URLSearchParams({ user_id: 'user_1' });
+        const userId = 'user_1';
+        const params = new URLSearchParams({ user_id: userId });
         if (selectedRegion !== "All") {
           params.append('region', selectedRegion);
         }
@@ -59,9 +76,22 @@ const Recommendations = () => {
         console.log('API response status:', response.status, response.statusText);
         
         if (!response.ok) {
-          const errorText = await response.text();
+          // Clone the response to read it without consuming the original stream
+          const responseClone = response.clone();
+          let errorText = 'Unknown error';
+          try {
+            const errorData = await responseClone.json();
+            errorText = errorData?.error || errorData?.message || errorData?.details || JSON.stringify(errorData);
+          } catch {
+            try {
+              errorText = await responseClone.text();
+            } catch {
+              errorText = `Server returned ${response.status} ${response.statusText}`;
+            }
+          }
           console.error('API error:', response.status, errorText);
-          throw new Error(`API returned ${response.status}: ${errorText.substring(0, 100)}`);
+          console.error('Full error response:', { status: response.status, statusText: response.statusText, errorText });
+          throw new Error(`API returned ${response.status}: ${errorText}`);
         }
         
         const contentType = response.headers.get('content-type');
@@ -156,6 +186,29 @@ const Recommendations = () => {
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Curated events based on your location, interests, and what's trending
           </p>
+          {currentProfile && (currentProfile.region !== "All" || currentProfile.genres.length > 0) && (
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-sm">
+              <span className="text-muted-foreground">Using your profile preferences:</span>
+              {currentProfile.region && currentProfile.region !== "All" && (
+                <span className="px-2 py-1 bg-primary/10 text-primary rounded-full flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />
+                  {currentProfile.region}
+                </span>
+              )}
+              {currentProfile.genres.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {currentProfile.genres.map((genre) => (
+                    <span
+                      key={genre}
+                      className="px-2 py-1 bg-secondary/20 text-secondary rounded-full"
+                    >
+                      {genre}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Error State */}
@@ -230,7 +283,9 @@ const Recommendations = () => {
                 Based on Your Interests
               </h2>
               <p className="text-sm text-muted-foreground">
-                Music events you might love
+                {selectedGenres.length > 0 
+                  ? `Events in ${selectedGenres.join(", ")}` 
+                  : "Events matching your interests"}
               </p>
             </div>
           </div>
