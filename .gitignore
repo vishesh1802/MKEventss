@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+.env
+
+# Documentation files (keep only README.md)
+*.md
+!README.md

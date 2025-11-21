@@ -4,16 +4,21 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import EventCard from "@/components/EventCard";
 import { Button } from "@/components/ui/button";
-import { Calendar, MapPin, DollarSign, Heart, Share2, Users, Clock, Download, ExternalLink, Bell } from "lucide-react";
+import { Calendar, MapPin, DollarSign, Heart, Share2, Users, Clock, Download, ExternalLink, Bell, Cloud, UtensilsCrossed, Wine, Sparkles, MessageSquare, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSavedEvents } from "@/contexts/SavedEventsContext";
 import { downloadCalendar, getGoogleCalendarUrl } from "@/utils/calendar";
-import { shareToFacebook, shareToTwitter, shareViaEmail, copyToClipboard, shareViaNativeShare } from "@/utils/share";
+import { shareToFacebook, shareToTwitter, shareViaEmail, copyToClipboard, shareViaNativeShare, shareViaGmail, shareViaOutlook, copyEmailTemplate } from "@/utils/share";
 import { saveReminder, getReminderForEvent, removeReminder, calculateReminderTime } from "@/utils/reminders";
+import { fetchWeather, getWeatherIconUrl, getWeatherConditionColor, formatWeatherCondition, getWeatherRecommendation, type WeatherData } from "@/utils/weather";
+import { fetchNearbyPlaces, getPriceLevelSymbol, getDirectionsUrl, formatDistance, type NearbyPlace } from "@/utils/nearby-places";
+import { generateEventDescription, getPersonalizedSummary, answerEventQuestion } from "@/utils/ai";
+import { useProfile } from "@/contexts/ProfileContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -27,6 +32,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Event {
   id: number;
@@ -53,7 +62,21 @@ const EventDetail = () => {
   const [reminderDialogOpen, setReminderDialogOpen] = useState(false);
   const [reminderType, setReminderType] = useState<'1day' | '1week' | 'custom'>('1day');
   const [customHours, setCustomHours] = useState(24);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [nearbyRestaurants, setNearbyRestaurants] = useState<NearbyPlace[]>([]);
+  const [nearbyBars, setNearbyBars] = useState<NearbyPlace[]>([]);
+  const [placesLoading, setPlacesLoading] = useState(false);
+  const [placesTab, setPlacesTab] = useState<'restaurants' | 'bars'>('restaurants');
+  const [aiDescription, setAiDescription] = useState<string | null>(null);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [answerLoading, setAnswerLoading] = useState(false);
+  const [showAIDescription, setShowAIDescription] = useState(false);
   const { toggleSaveEvent, toggleAttendingEvent, isEventSaved, isEventAttending } = useSavedEvents();
+  const { currentProfile } = useProfile();
   const isSaved = event ? isEventSaved(event.id) : false;
   const isAttending = event ? isEventAttending(event.id) : false;
   const hasReminder = event ? getReminderForEvent(event.id) !== null : false;
@@ -115,6 +138,26 @@ const EventDetail = () => {
         };
         
         setEvent(mappedEvent);
+        
+        // Fetch weather for event date
+        if (lat && lon) {
+          setWeatherLoading(true);
+          const weatherData = await fetchWeather(lat, lon, isoDate);
+          setWeather(weatherData);
+          setWeatherLoading(false);
+        }
+        
+        // Fetch nearby places
+        if (lat && lon) {
+          setPlacesLoading(true);
+          const [restaurants, bars] = await Promise.all([
+            fetchNearbyPlaces(lat, lon, 'restaurant', 1000),
+            fetchNearbyPlaces(lat, lon, 'bar', 1000),
+          ]);
+          setNearbyRestaurants(restaurants);
+          setNearbyBars(bars);
+          setPlacesLoading(false);
+        }
         
         // Fetch related events (same genre, different event)
         const allEventsResponse = await fetch('/api/events');
@@ -205,7 +248,7 @@ const EventDetail = () => {
     }
   };
 
-  const handleShare = async (platform?: 'facebook' | 'twitter' | 'email' | 'native' | 'copy') => {
+  const handleShare = async (platform?: 'facebook' | 'twitter' | 'email' | 'gmail' | 'outlook' | 'email-copy' | 'native' | 'copy') => {
     const url = window.location.href;
     const title = event?.title || 'Event';
 
@@ -221,7 +264,22 @@ const EventDetail = () => {
     } else if (platform === 'twitter') {
       shareToTwitter(url, title);
     } else if (platform === 'email') {
+      // Try mailto: link (works if email client is configured)
       shareViaEmail(url, title);
+      toast.info("Opening email client...");
+    } else if (platform === 'gmail') {
+      shareViaGmail(url, title);
+      toast.success("Opening Gmail...");
+    } else if (platform === 'outlook') {
+      shareViaOutlook(url, title);
+      toast.success("Opening Outlook...");
+    } else if (platform === 'email-copy') {
+      const copied = await copyEmailTemplate(url, title);
+      if (copied) {
+        toast.success("Email template copied to clipboard! Paste it into your email.");
+      } else {
+        toast.error("Failed to copy email template.");
+      }
     } else if (platform === 'native') {
       shareViaNativeShare(url, title, event?.description);
     }
@@ -278,6 +336,36 @@ const EventDetail = () => {
     }
     const url = `https://www.google.com/maps/dir/?api=1&destination=${event.latitude},${event.longitude}`;
     window.open(url, '_blank');
+  };
+
+  const handleAskQuestion = async () => {
+    if (!question.trim() || !event) return;
+    
+    setAnswerLoading(true);
+    setAnswer(null);
+    
+    const answerText = await answerEventQuestion(
+      {
+        title: event.title,
+        event_name: event.event_name,
+        genre: event.genre,
+        date: event.date,
+        venue_name: event.venue_name,
+        region: event.region,
+        price: event.price,
+        description: event.description,
+      },
+      question
+    );
+    
+    setAnswer(answerText);
+    setAnswerLoading(false);
+    
+    if (answerText) {
+      toast.success("Answer generated!");
+    } else {
+      toast.error("Failed to get answer");
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -426,13 +514,23 @@ const EventDetail = () => {
                     <DropdownMenuItem onClick={() => handleShare('twitter')}>
                       Twitter
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleShare('email')}>
-                      Email
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleShare('gmail')}>
+                      Gmail
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleShare('outlook')}>
+                      Outlook
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleShare('email-copy')}>
+                      Copy Email Template
                     </DropdownMenuItem>
                     {navigator.share && (
-                      <DropdownMenuItem onClick={() => handleShare('native')}>
-                        More Options
-                      </DropdownMenuItem>
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => handleShare('native')}>
+                          More Options
+                        </DropdownMenuItem>
+                      </>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -534,13 +632,375 @@ const EventDetail = () => {
 
             {/* Description */}
             <div className="border-t border-border pt-6">
-              <h2 className="text-2xl font-semibold text-foreground mb-4">
-                About This Event
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-semibold text-foreground">
+                  About This Event
+                </h2>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    if (aiDescription) {
+                      setShowAIDescription(!showAIDescription);
+                      return;
+                    }
+                    setAiLoading(true);
+                    const desc = await generateEventDescription({
+                      title: event.title,
+                      event_name: event.event_name,
+                      genre: event.genre,
+                      date: event.date,
+                      venue_name: event.venue_name,
+                      region: event.region,
+                      price: event.price,
+                      description: event.description,
+                    });
+                    setAiDescription(desc);
+                    setShowAIDescription(true);
+                    setAiLoading(false);
+                    if (desc) {
+                      toast.success("AI description generated!");
+                    } else {
+                      toast.error("Failed to generate AI description");
+                    }
+                  }}
+                  disabled={aiLoading}
+                  className="gap-2"
+                >
+                  {aiLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  {aiDescription && showAIDescription ? "Hide AI Description" : "Generate AI Description"}
+                </Button>
+              </div>
               <p className="text-muted-foreground leading-relaxed text-lg">
                 {event.description}
               </p>
+              {showAIDescription && aiDescription && (
+                <div className="mt-4 p-4 bg-primary/5 border border-primary/20 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-primary">AI-Enhanced Description</span>
+                  </div>
+                  <p className="text-foreground leading-relaxed">{aiDescription}</p>
+                </div>
+              )}
             </div>
+
+            {/* AI Personalized Summary */}
+            {currentProfile && currentProfile.genres.length > 0 && (
+              <div className="border-t border-border pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+                    <Sparkles className="w-6 h-6 text-primary" />
+                    Personalized For You
+                  </h2>
+                  {!aiSummary && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        setAiLoading(true);
+                        const summary = await getPersonalizedSummary(
+                          {
+                            title: event.title,
+                            event_name: event.event_name,
+                            genre: event.genre,
+                            date: event.date,
+                            venue_name: event.venue_name,
+                            region: event.region,
+                            price: event.price,
+                          },
+                          {
+                            genres: currentProfile.genres,
+                            region: currentProfile.region || undefined,
+                          }
+                        );
+                        setAiSummary(summary);
+                        setAiLoading(false);
+                        if (summary) {
+                          toast.success("Personalized summary generated!");
+                        } else {
+                          toast.error("Failed to generate summary");
+                        }
+                      }}
+                      disabled={aiLoading}
+                      className="gap-2"
+                    >
+                      {aiLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-4 h-4" />
+                      )}
+                      Generate Summary
+                    </Button>
+                  )}
+                </div>
+                {aiSummary ? (
+                  <div className="p-4 bg-secondary/50 border border-border rounded-lg">
+                    <p className="text-foreground leading-relaxed">{aiSummary}</p>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-sm">
+                    Get a personalized summary explaining why this event matches your interests.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* AI Q&A Section */}
+            <div className="border-t border-border pt-6">
+              <h2 className="text-2xl font-semibold text-foreground mb-4 flex items-center gap-2">
+                <MessageSquare className="w-6 h-6 text-primary" />
+                Ask About This Event
+              </h2>
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Ask a question (e.g., What should I wear?)"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && question.trim()) {
+                        handleAskQuestion();
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={handleAskQuestion}
+                    disabled={!question.trim() || answerLoading}
+                  >
+                    {answerLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      "Ask"
+                    )}
+                  </Button>
+                </div>
+                {answer && (
+                  <div className="p-4 bg-muted border border-border rounded-lg">
+                    <p className="text-foreground leading-relaxed">{answer}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Weather & Context Section */}
+            {(event.latitude && event.longitude) && (
+              <div className="border-t border-border pt-6 space-y-6">
+                {/* Weather Forecast */}
+                {weatherLoading ? (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Cloud className="w-5 h-5" />
+                        Weather Forecast
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <Skeleton className="h-8 w-32" />
+                        <Skeleton className="h-4 w-48" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : weather ? (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Cloud className="w-5 h-5" />
+                        Weather Forecast
+                      </CardTitle>
+                      <CardDescription>
+                        Weather conditions for {formatDate(event.date)}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-start gap-6 flex-wrap">
+                        <div className="flex items-center gap-4">
+                          <img
+                            src={getWeatherIconUrl(weather.icon)}
+                            alt={weather.condition}
+                            className="w-16 h-16"
+                          />
+                          <div>
+                            <div className="text-3xl font-bold text-foreground">
+                              {weather.temperature}°F
+                            </div>
+                            <div className={`text-lg font-medium ${getWeatherConditionColor(weather.condition)}`}>
+                              {formatWeatherCondition(weather.condition)}
+                            </div>
+                            <div className="text-sm text-muted-foreground capitalize">
+                              {weather.description}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-[200px] space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Humidity:</span>
+                            <span className="font-medium">{weather.humidity}%</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Wind Speed:</span>
+                            <span className="font-medium">{weather.windSpeed} mph</span>
+                          </div>
+                          {weather.precipitation !== undefined && weather.precipitation > 0 && (
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Precipitation:</span>
+                              <span className="font-medium">{weather.precipitation.toFixed(2)} mm</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-4 p-3 bg-muted rounded-lg">
+                        <p className="text-sm text-foreground">
+                          <strong>💡 Tip:</strong> {getWeatherRecommendation(weather.condition, weather.temperature)}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {/* Nearby Places */}
+                {(nearbyRestaurants.length > 0 || nearbyBars.length > 0 || placesLoading) && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <MapPin className="w-5 h-5" />
+                        Nearby Places
+                      </CardTitle>
+                      <CardDescription>
+                        Restaurants and bars near the event venue
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Tabs value={placesTab} onValueChange={(v) => setPlacesTab(v as 'restaurants' | 'bars')}>
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="restaurants" className="gap-2">
+                            <UtensilsCrossed className="w-4 h-4" />
+                            Restaurants ({nearbyRestaurants.length})
+                          </TabsTrigger>
+                          <TabsTrigger value="bars" className="gap-2">
+                            <Wine className="w-4 h-4" />
+                            Bars ({nearbyBars.length})
+                          </TabsTrigger>
+                        </TabsList>
+                        
+                        <TabsContent value="restaurants" className="mt-4">
+                          {placesLoading ? (
+                            <div className="space-y-3">
+                              {[1, 2, 3].map((i) => (
+                                <Skeleton key={i} className="h-20 w-full" />
+                              ))}
+                            </div>
+                          ) : nearbyRestaurants.length > 0 ? (
+                            <div className="space-y-3">
+                              {nearbyRestaurants.map((place, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-start justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                                >
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <h4 className="font-semibold text-foreground">{place.name}</h4>
+                                      {place.rating && (
+                                        <Badge variant="secondary" className="text-xs">
+                                          ⭐ {place.rating.toFixed(1)}
+                                        </Badge>
+                                      )}
+                                      {place.priceLevel && (
+                                        <Badge variant="outline" className="text-xs">
+                                          {getPriceLevelSymbol(place.priceLevel)}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-muted-foreground mb-2">{place.address}</p>
+                                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                      <span className="flex items-center gap-1">
+                                        <MapPin className="w-3 h-3" />
+                                        {formatDistance(place.distance)} away
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => window.open(getDirectionsUrl(place.lat, place.lng), '_blank')}
+                                    className="ml-4"
+                                  >
+                                    <ExternalLink className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-center text-muted-foreground py-8">
+                              No restaurants found nearby
+                            </p>
+                          )}
+                        </TabsContent>
+                        
+                        <TabsContent value="bars" className="mt-4">
+                          {placesLoading ? (
+                            <div className="space-y-3">
+                              {[1, 2, 3].map((i) => (
+                                <Skeleton key={i} className="h-20 w-full" />
+                              ))}
+                            </div>
+                          ) : nearbyBars.length > 0 ? (
+                            <div className="space-y-3">
+                              {nearbyBars.map((place, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-start justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                                >
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <h4 className="font-semibold text-foreground">{place.name}</h4>
+                                      {place.rating && (
+                                        <Badge variant="secondary" className="text-xs">
+                                          ⭐ {place.rating.toFixed(1)}
+                                        </Badge>
+                                      )}
+                                      {place.priceLevel && (
+                                        <Badge variant="outline" className="text-xs">
+                                          {getPriceLevelSymbol(place.priceLevel)}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-muted-foreground mb-2">{place.address}</p>
+                                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                      <span className="flex items-center gap-1">
+                                        <MapPin className="w-3 h-3" />
+                                        {formatDistance(place.distance)} away
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => window.open(getDirectionsUrl(place.lat, place.lng), '_blank')}
+                                    className="ml-4"
+                                  >
+                                    <ExternalLink className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-center text-muted-foreground py-8">
+                              No bars found nearby
+                            </p>
+                          )}
+                        </TabsContent>
+                      </Tabs>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Related Events */}

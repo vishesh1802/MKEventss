@@ -15,9 +15,33 @@ export function shareToTwitter(url: string, title: string): void {
 
 export function shareViaEmail(url: string, title: string): void {
   const subject = `Check out this event: ${title}`;
-  const body = `I thought you might be interested in this event:\n\n${title}\n\n${url}`;
+  const body = `I thought you might be interested in this event:\n\n${title}\n\n${url}\n\nCheck it out on MKEvents!`;
   const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  
+  // Open mailto link - will open default email client if configured
+  // This works on desktop if user has Mail/Outlook/Gmail desktop app
   window.location.href = mailtoUrl;
+}
+
+export function shareViaGmail(url: string, title: string): void {
+  const subject = `Check out this event: ${title}`;
+  const body = `I thought you might be interested in this event:\n\n${title}\n\n${url}\n\nCheck it out on MKEvents!`;
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.open(gmailUrl, '_blank');
+}
+
+export function shareViaOutlook(url: string, title: string): void {
+  const subject = `Check out this event: ${title}`;
+  const body = `I thought you might be interested in this event:\n\n${title}\n\n${url}\n\nCheck it out on MKEvents!`;
+  const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.open(outlookUrl, '_blank');
+}
+
+export async function copyEmailTemplate(url: string, title: string): Promise<boolean> {
+  const subject = `Check out this event: ${title}`;
+  const body = `I thought you might be interested in this event:\n\n${title}\n\n${url}\n\nCheck it out on MKEvents!`;
+  const emailTemplate = `Subject: ${subject}\n\n${body}`;
+  return await copyToClipboard(emailTemplate);
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {

@@ -40,6 +40,8 @@ MKEvents is a modern, responsive web application that helps you discover and man
 - **Calendar Integration**: Add events to Google Calendar or download iCal files
 - **Event Reminders**: Set custom reminders for upcoming events
 - **Get Directions**: Quick access to event locations with Google Maps
+- **Weather Forecast**: See weather conditions for event dates with helpful recommendations
+- **Nearby Places**: Discover restaurants and bars near event venues
 
 ## Getting Started
 
@@ -70,9 +72,20 @@ MKEvents is a modern, responsive web application that helps you discover and man
    POSTGRES_PRISMA_URL=your_vercel_postgres_prisma_url
    POSTGRES_URL_NON_POOLING=your_vercel_postgres_non_pooling_url
    PASSWORD_SALT=your_secure_random_salt_string
+   
+   # Optional: Weather & Context Integration
+   OPENWEATHER_API_KEY=your_openweather_api_key_here
+   GOOGLE_PLACES_API_KEY=your_google_places_api_key_here
+   
+   # Optional: AI Features (OpenRouter)
+   OPENROUTER_API_KEY=your_openrouter_api_key
+   OPENROUTER_MODEL=openai/gpt-3.5-turbo
    ```
    
-   **Note**: `PASSWORD_SALT` is optional for development but recommended. Generate a random string for production.
+   **Note**: 
+   - `PASSWORD_SALT` is optional for development but recommended. Generate a random string for production.
+   - Weather and Places API keys are optional. The app will use mock data if keys are not provided. See `WEATHER_INTEGRATION_SETUP.md` for setup instructions.
+   - OpenRouter API key is optional. Enables AI-powered features like event descriptions and personalized summaries. See `OPENROUTER_SETUP.md` for setup instructions.
 
 4. **Set up the database**
    
