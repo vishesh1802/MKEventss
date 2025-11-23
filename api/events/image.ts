@@ -3,14 +3,11 @@ import { sql } from "@vercel/postgres";
 import "dotenv/config";
 
 /**
- * API endpoint for generating event images using OpenRouter + Unsplash
+ * Combined API endpoint for event image operations
  * 
- * Uses OpenRouter to generate optimized image search queries
- * Then uses Unsplash API (free) to fetch relevant images
- * Falls back to placeholder images if APIs not available
- * 
- * POST /api/events/image/generate
- * Body: { event_id: number, prompt?: string }
+ * POST /api/events/image
+ * - Generate: Body: { event_id: number, prompt?: string }
+ * - Upload: Body: { event_id: number, image_url: string, action: 'upload' }
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS headers
@@ -28,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { event_id, prompt } = req.body;
+    const { event_id, image_url, prompt, action } = req.body;
 
     if (!event_id) {
       return res.status(400).json({ error: "event_id is required" });
@@ -59,6 +56,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const event = eventResult.rows[0];
     const actualEventId = event.id;
 
+    // Handle upload action (simple URL assignment)
+    if (action === 'upload' || image_url) {
+      if (!image_url || typeof image_url !== "string") {
+        return res.status(400).json({ error: "image_url is required and must be a string" });
+      }
+
+      // Validate URL format
+      try {
+        new URL(image_url);
+      } catch {
+        return res.status(400).json({ error: "Invalid image URL format" });
+      }
+
+      // Update event with image URL
+      await sql`
+        UPDATE events 
+        SET image = ${image_url}
+        WHERE id = ${actualEventId}
+      `;
+
+      return res.status(200).json({
+        success: true,
+        message: "Event image uploaded successfully",
+        event_id: actualEventId,
+        image: image_url,
+      });
+    }
+
+    // Handle generate action (default)
     // Check if event already has a real image (not placeholder)
     const existingImage = event.image;
     if (existingImage && 
@@ -200,9 +226,9 @@ Return ONLY the search query, nothing else. Examples: "music concert stage", "fo
       searchQuery: searchQuery,
     });
   } catch (error) {
-    console.error("❌ Image Generation API Error:", error);
+    console.error("❌ Image API Error:", error);
     return res.status(500).json({
-      error: "Failed to generate image",
+      error: "Failed to process image request",
       message: (error as Error).message,
     });
   }
@@ -225,3 +251,4 @@ function generateImageSearchQuery(event: any): string {
   
   return queryParts.slice(0, 3).join(' '); // Limit to 3 words for better results
 }
+

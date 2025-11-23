@@ -18,7 +18,7 @@ export async function fetchNearbyPlaces(
 ): Promise<NearbyPlace[]> {
   try {
     const response = await fetch(
-      `/api/nearby-places?lat=${lat}&lon=${lon}&type=${type}&radius=${radius}`
+      `/api/context?type=places&lat=${lat}&lon=${lon}&placeType=${type}&radius=${radius}`
     );
     
     if (!response.ok) {

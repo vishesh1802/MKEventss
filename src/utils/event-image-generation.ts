@@ -24,7 +24,7 @@ export async function generateEventImage(
   options: GenerateImageOptions
 ): Promise<GenerateImageResponse> {
   try {
-    const response = await fetch("/api/events/image/generate", {
+    const response = await fetch("/api/events/image", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

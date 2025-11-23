@@ -7,7 +7,7 @@
  */
 export async function getEventImage(eventId: number): Promise<string | null> {
   try {
-    const response = await fetch(`/api/events/${eventId}/image`);
+    const response = await fetch(`/api/events/${eventId}?image=true`);
     if (!response.ok) {
       throw new Error(`Failed to fetch event image: ${response.status}`);
     }
@@ -27,7 +27,7 @@ export async function uploadEventImage(
   imageUrl: string
 ): Promise<{ success: boolean; image?: string; message?: string }> {
   try {
-    const response = await fetch(`/api/events/image/upload`, {
+    const response = await fetch(`/api/events/image`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -35,6 +35,7 @@ export async function uploadEventImage(
       body: JSON.stringify({
         event_id: eventId,
         image_url: imageUrl,
+        action: 'upload',
       }),
     });
 
@@ -58,7 +59,7 @@ export async function updateEventImage(
   imageUrl: string
 ): Promise<{ success: boolean; image?: string; message?: string }> {
   try {
-    const response = await fetch(`/api/events/${eventId}/image`, {
+    const response = await fetch(`/api/events/${eventId}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -87,7 +88,7 @@ export async function removeEventImage(
   eventId: number
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await fetch(`/api/events/${eventId}/image`, {
+    const response = await fetch(`/api/events/${eventId}?action=delete-image`, {
       method: "DELETE",
     });
 

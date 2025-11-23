@@ -16,7 +16,7 @@ export async function fetchWeather(
 ): Promise<WeatherData | null> {
   try {
     const response = await fetch(
-      `/api/weather?lat=${lat}&lon=${lon}&date=${date}`
+      `/api/context?type=weather&lat=${lat}&lon=${lon}&date=${date}`
     );
     
     if (!response.ok) {
