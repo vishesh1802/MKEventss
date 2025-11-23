@@ -25,6 +25,7 @@ interface Event {
   genre: string;
   date: string;
   price: number;
+  image?: string;
 }
 
 const Dashboard = () => {
@@ -55,6 +56,7 @@ const Dashboard = () => {
               genre: r.genre || 'General',
               date: isoDate,
               price: parseFloat(r.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+              image: r.image || undefined,
             };
           });
           setRecommendedEvents(mapped);
@@ -101,6 +103,7 @@ const Dashboard = () => {
                 genre: e.genre || 'General',
                 date: isoDate,
                 price: parseFloat(e.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+                image: e.image || undefined,
               };
             });
           
@@ -118,8 +121,73 @@ const Dashboard = () => {
     fetchData();
   }, []);
 
+  // Fetch full event data for saved/attending events to get images
+  const [attendingEventsWithImages, setAttendingEventsWithImages] = useState<Event[]>([]);
+  
+  useEffect(() => {
+    const enrichEventsWithImages = async () => {
+      if (attendingEvents.length === 0) {
+        setAttendingEventsWithImages([]);
+        return;
+      }
+
+      try {
+        // Fetch all events from API
+        const response = await fetch('/api/events');
+        if (!response.ok) return;
+        
+        const allEvents = await response.json();
+        
+        // Helper function to get region from coordinates
+        const getVenueRegion = (lat: number, lon: number): string | null => {
+          if (lat >= 43.038 && lat <= 43.045 && lon >= -87.92 && lon <= -87.89) return 'Downtown';
+          if (lat >= 43.0335 && lat <= 43.0345 && lon >= -87.9335 && lon <= -87.9325) return 'Third Ward';
+          if (lat >= 43.0515 && lat <= 43.053 && lon >= -87.906 && lon <= -87.904) return 'Walker\'s Point';
+          if (lat >= 43.0755 && lat <= 43.077 && (lon >= -87.881 && lon <= -87.879 || Math.abs(lon - (-87.88)) < 0.001)) return 'East Side';
+          return null;
+        };
+
+        // Map attending events with images from API
+        const enriched = attendingEvents
+          .map(savedEvent => {
+            const apiEvent = allEvents.find((e: any) => e.id === savedEvent.id || e.event_id === String(savedEvent.id));
+            if (!apiEvent) return null;
+
+            let isoDate = apiEvent.date;
+            if (apiEvent.date && apiEvent.date.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
+              const [month, day, year] = apiEvent.date.split('/');
+              isoDate = `20${year.padStart(2, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            }
+
+            const lat = Number(apiEvent.latitude);
+            const lon = Number(apiEvent.longitude);
+            const venueRegion = (lat && lon && getVenueRegion(lat, lon)) || apiEvent.venue_name || 'Milwaukee';
+
+            return {
+              id: apiEvent.id || savedEvent.id,
+              title: apiEvent.event_name || savedEvent.title,
+              region: venueRegion,
+              genre: apiEvent.genre || savedEvent.genre,
+              date: isoDate || savedEvent.date,
+              price: parseFloat(apiEvent.ticket_price?.replace(/[^0-9.]/g, '') || '0') || savedEvent.price,
+              image: apiEvent.image || savedEvent.image || undefined,
+            };
+          })
+          .filter((e): e is Event => e !== null);
+
+        setAttendingEventsWithImages(enriched);
+      } catch (error) {
+        console.error('Error enriching events with images:', error);
+        // Fallback to events without images
+        setAttendingEventsWithImages(attendingEvents as Event[]);
+      }
+    };
+
+    enrichEventsWithImages();
+  }, [attendingEvents]);
+
   // Sort attending events by date
-  const upcomingAttending = [...attendingEvents]
+  const upcomingAttending = [...attendingEventsWithImages]
     .filter(e => {
       const eventDate = new Date(e.date);
       const today = new Date();

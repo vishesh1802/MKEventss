@@ -62,8 +62,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
   } catch (error: any) {
-    console.error("Signup error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("❌ Signup error:", error);
+    console.error("❌ Error message:", error?.message);
+    console.error("❌ Error code:", error?.code);
+    console.error("❌ Error stack:", error?.stack);
+    res.status(500).json({ 
+      error: "Internal server error",
+      message: error?.message || "Unknown error"
+    });
   }
 }
 

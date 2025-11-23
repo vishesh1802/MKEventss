@@ -32,6 +32,12 @@ const Index = () => {
         }
         const data = await response.json();
         console.log('🏠 Home: Received', data.length, 'events from API');
+        console.log('🏠 Home: Sample event data:', data[0] ? {
+          id: data[0].id,
+          event_name: data[0].event_name,
+          image: data[0].image,
+          hasImage: !!data[0].image
+        } : 'No events');
         
         // Helper function to get region from coordinates
         const getVenueRegion = (lat: number, lon: number): string | null => {
@@ -94,6 +100,7 @@ const Index = () => {
               genre: event.genre || 'General',
               date: isoDate || new Date().toISOString().split('T')[0],
               price: parseFloat(event.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+              image: event.image || undefined,
             };
           })
           .filter((event: Event | null) => event !== null) as Event[];

@@ -15,6 +15,7 @@ interface Event {
   genre: string;
   date: string;
   price: number;
+  image?: string;
   description?: string;
   venue_name?: string;
   organizer?: string;
@@ -58,6 +59,7 @@ const CompareEvents = () => {
               genre: e.genre || 'General',
               date: isoDate,
               price: parseFloat(e.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+              image: e.image || undefined,
               description: e.description,
               venue_name: e.venue_name,
               organizer: e.organizer,

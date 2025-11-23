@@ -20,8 +20,22 @@ export async function createTables() {
       longitude DOUBLE PRECISION,
       description TEXT,
       organizer TEXT,
-      ticket_price TEXT
+      ticket_price TEXT,
+      image TEXT
     );
+  `;
+  
+  // Add image column if it doesn't exist (migration for existing tables)
+  await sql`
+    DO $$ 
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'events' AND column_name = 'image'
+      ) THEN
+        ALTER TABLE events ADD COLUMN image TEXT;
+      END IF;
+    END $$;
   `;
   // Create users table for authentication
   await sql`
@@ -33,6 +47,39 @@ export async function createTables() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+  `;
+  
+  // Migrate password column to password_hash if needed
+  await sql`
+    DO $$ 
+    BEGIN
+      -- If password column exists but password_hash doesn't, rename it
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'password'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'password_hash'
+      ) THEN
+        ALTER TABLE users RENAME COLUMN password TO password_hash;
+      END IF;
+      
+      -- If password_hash doesn't exist at all, add it
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'password_hash'
+      ) THEN
+        ALTER TABLE users ADD COLUMN password_hash TEXT;
+      END IF;
+      
+      -- Remove password column if it still exists (after migration)
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'password'
+      ) THEN
+        ALTER TABLE users DROP COLUMN password;
+      END IF;
+    END $$;
   `;
   
   // Create user_history for recommendations if it doesn't exist
@@ -55,7 +102,7 @@ export async function createTables() {
       profile_id VARCHAR(255) NOT NULL,
       name VARCHAR(255) NOT NULL,
       region VARCHAR(255) NOT NULL,
-      genres TEXT[] DEFAULT '{}',
+      genres TEXT DEFAULT '[]',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE (user_id, profile_id)
@@ -72,6 +119,21 @@ export async function createTables() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `;
+  
+  // Create event_reviews table for reviews and ratings
+  await sql`
+    CREATE TABLE IF NOT EXISTS event_reviews (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+      review_text TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, event_id)
+    );
+  `;
+  
   // Helpful indexes to speed up lookups
   await sql`CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);`;
   await sql`CREATE INDEX IF NOT EXISTS idx_events_genre ON events(genre);`;
@@ -81,6 +143,9 @@ export async function createTables() {
   await sql`CREATE INDEX IF NOT EXISTS idx_user_profiles_user ON user_profiles(user_id);`;
   await sql`CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);`;
   await sql`CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_event_reviews_event ON event_reviews(event_id);`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_event_reviews_user ON event_reviews(user_id);`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_event_reviews_user_event ON event_reviews(user_id, event_id);`;
   console.log('✅ Tables ensured');
 }
 

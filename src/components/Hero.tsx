@@ -3,6 +3,7 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import milwaukeeHeroImage from "@/assets/milwaukee-hero.jpg";
 
 const Hero = () => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -16,9 +17,36 @@ const Hero = () => {
   };
 
   return (
-    <section className="relative gradient-hero text-white py-20 md:py-32 overflow-hidden">
+    <section className="relative text-white py-20 md:py-32 overflow-hidden min-h-[600px] md:min-h-[700px]">
+      {/* Background Image */}
+      <div className="absolute inset-0 z-0">
+        <img 
+          key="milwaukee-hero"
+          src={milwaukeeHeroImage}
+          alt="Milwaukee skyline with Art Museum"
+          className="w-full h-full object-cover object-center"
+          style={{
+            minHeight: '100%',
+            minWidth: '100%',
+            objectPosition: 'center center'
+          }}
+          loading="eager"
+          onError={(e) => {
+            // Fallback to gradient if image fails to load
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+            const parent = target.parentElement;
+            if (parent) {
+              parent.className = 'absolute inset-0 z-0 gradient-hero';
+            }
+          }}
+        />
+        {/* Overlay for better text readability */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/75"></div>
+      </div>
+
       {/* Decorative Elements */}
-      <div className="absolute inset-0 opacity-10">
+      <div className="absolute inset-0 opacity-10 z-0">
         <div className="absolute top-10 left-10 w-72 h-72 bg-white rounded-full blur-3xl animate-pulse-soft"></div>
         <div className="absolute bottom-10 right-10 w-96 h-96 bg-white rounded-full blur-3xl animate-pulse-soft" style={{ animationDelay: '1s' }}></div>
       </div>

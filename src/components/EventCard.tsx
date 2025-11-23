@@ -1,4 +1,4 @@
-import { Calendar, MapPin, DollarSign, Heart, CheckCircle2, Clock } from "lucide-react";
+import { Calendar, MapPin, DollarSign, Heart, CheckCircle2, Clock, Star } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Link } from "react-router-dom";
@@ -12,9 +12,15 @@ interface EventCardProps {
   date: string;
   price: number;
   image?: string;
+  averageRating?: number;
+  totalReviews?: number;
 }
 
-const EventCard = ({ id, title, region, genre, date, price, image }: EventCardProps) => {
+const EventCard = ({ id, title, region, genre, date, price, image, averageRating, totalReviews }: EventCardProps) => {
+  // Debug: Log image prop
+  if (image) {
+    console.log(`🖼️ EventCard ${id} (${title}): image =`, image);
+  }
   const { toggleSaveEvent, toggleAttendingEvent, isEventSaved, isEventAttending } = useSavedEvents();
   const isSaved = isEventSaved(id);
   const isAttending = isEventAttending(id);
@@ -47,11 +53,28 @@ const EventCard = ({ id, title, region, genre, date, price, image }: EventCardPr
     <div className={`event-card group ${isPast ? 'opacity-75' : ''}`}>
       {/* Image */}
       <div className="relative h-48 overflow-hidden bg-muted">
-        {image ? (
+        {image && image.trim() !== '' ? (
           <img 
             src={image} 
             alt={title}
             className="w-full h-full object-cover transition-smooth group-hover:scale-105"
+            onError={(e) => {
+              console.error('❌ Image failed to load:', image, 'for event:', title);
+              // Hide broken image and show placeholder
+              const parent = (e.target as HTMLImageElement).parentElement;
+              if (parent) {
+                parent.innerHTML = `
+                  <div class="w-full h-full gradient-hero flex items-center justify-center">
+                    <svg class="w-12 h-12 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                `;
+              }
+            }}
+            onLoad={() => {
+              console.log('✅ Image loaded successfully:', image, 'for event:', title);
+            }}
           />
         ) : (
           <div className="w-full h-full gradient-hero flex items-center justify-center">
@@ -65,7 +88,7 @@ const EventCard = ({ id, title, region, genre, date, price, image }: EventCardPr
           <button
             onClick={(e) => {
               e.preventDefault();
-              toggleSaveEvent({ id, title, region, genre, date, price });
+              toggleSaveEvent({ id, title, region, genre, date, price, image });
             }}
             className="w-10 h-10 bg-white/90 dark:bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center transition-smooth hover:scale-110 active:scale-95"
             title={isSaved ? "Remove from favorites" : "Add to favorites"}
@@ -145,6 +168,19 @@ const EventCard = ({ id, title, region, genre, date, price, image }: EventCardPr
             <DollarSign className="w-4 h-4 text-secondary" />
             {price === 0 ? "Free" : `$${price}`}
           </div>
+          {averageRating !== undefined && averageRating > 0 && (
+            <div className="flex items-center gap-2 text-sm">
+              <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+              <span className="font-medium text-foreground">
+                {averageRating.toFixed(1)}
+              </span>
+              {totalReviews !== undefined && totalReviews > 0 && (
+                <span className="text-muted-foreground">
+                  ({totalReviews})
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2">
@@ -157,7 +193,7 @@ const EventCard = ({ id, title, region, genre, date, price, image }: EventCardPr
             onClick={(e) => {
               e.preventDefault();
               if (!isPast) {
-                toggleAttendingEvent({ id, title, region, genre, date, price });
+                toggleAttendingEvent({ id, title, region, genre, date, price, image });
               }
             }}
             disabled={isPast}

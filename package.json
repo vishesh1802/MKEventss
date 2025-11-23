@@ -9,7 +9,10 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "upload-data": "npx tsx scripts/setup.ts"
+    "upload-data": "npx tsx scripts/setup.ts",
+    "generate-images": "npx tsx scripts/generate-all-images.ts",
+    "generate-images-batch": "npx tsx scripts/generate-images-batch.ts",
+    "check-images": "npx tsx scripts/check-image-status.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

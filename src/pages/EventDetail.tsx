@@ -4,7 +4,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import EventCard from "@/components/EventCard";
 import { Button } from "@/components/ui/button";
-import { Calendar, MapPin, DollarSign, Heart, Share2, Users, Clock, Download, ExternalLink, Bell, Cloud, UtensilsCrossed, Wine, Sparkles, MessageSquare, Loader2 } from "lucide-react";
+import { Calendar, MapPin, DollarSign, Heart, Share2, Users, Clock, Download, ExternalLink, Bell, Cloud, UtensilsCrossed, Wine, Sparkles, MessageSquare, Loader2, Star, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useSavedEvents } from "@/contexts/SavedEventsContext";
 import { downloadCalendar, getGoogleCalendarUrl } from "@/utils/calendar";
@@ -13,6 +13,9 @@ import { saveReminder, getReminderForEvent, removeReminder, calculateReminderTim
 import { fetchWeather, getWeatherIconUrl, getWeatherConditionColor, formatWeatherCondition, getWeatherRecommendation, type WeatherData } from "@/utils/weather";
 import { fetchNearbyPlaces, getPriceLevelSymbol, getDirectionsUrl, formatDistance, type NearbyPlace } from "@/utils/nearby-places";
 import { generateEventDescription, getPersonalizedSummary, answerEventQuestion } from "@/utils/ai";
+import { fetchReviews, submitReview, formatRating, getRatingColor, formatReviewTimestamp, formatFullTimestamp, type Review } from "@/utils/reviews";
+import { generateEventImage } from "@/utils/event-image-generation";
+import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import {
   DropdownMenu,
@@ -31,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -75,8 +79,18 @@ const EventDetail = () => {
   const [answer, setAnswer] = useState<string | null>(null);
   const [answerLoading, setAnswerLoading] = useState(false);
   const [showAIDescription, setShowAIDescription] = useState(false);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [averageRating, setAverageRating] = useState(0);
+  const [totalReviews, setTotalReviews] = useState(0);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewText, setReviewText] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [generatingImage, setGeneratingImage] = useState(false);
   const { toggleSaveEvent, toggleAttendingEvent, isEventSaved, isEventAttending } = useSavedEvents();
   const { currentProfile } = useProfile();
+  const { user, isAuthenticated } = useAuth();
   const isSaved = event ? isEventSaved(event.id) : false;
   const isAttending = event ? isEventAttending(event.id) : false;
   const hasReminder = event ? getReminderForEvent(event.id) !== null : false;
@@ -121,8 +135,9 @@ const EventDetail = () => {
         const lon = Number(eventData.longitude);
         const venueRegion = (lat && lon && getVenueRegion(lat, lon)) || eventData.venue_name || 'Milwaukee';
         
+        // Use the actual database ID from eventData.id (this is the real events.id)
         const mappedEvent: Event = {
-          id: eventData.id || parseInt(eventData.event_id?.replace(/\D/g, '') || String(id)),
+          id: eventData.id, // Always use the database ID from events table
           event_id: eventData.event_id,
           title: eventData.event_name || 'Untitled Event',
           event_name: eventData.event_name,
@@ -135,8 +150,11 @@ const EventDetail = () => {
           latitude: lat,
           longitude: lon,
           organizer: eventData.organizer,
+          image: eventData.image || undefined,
         };
         
+        console.log('📝 Event loaded - Database ID:', eventData.id, 'Mapped ID:', mappedEvent.id);
+        console.log('🖼️ Event image status:', mappedEvent.image ? 'Has image' : 'No image');
         setEvent(mappedEvent);
         
         // Fetch weather for event date
@@ -157,6 +175,19 @@ const EventDetail = () => {
           setNearbyRestaurants(restaurants);
           setNearbyBars(bars);
           setPlacesLoading(false);
+        }
+        
+        // Fetch reviews
+        if (eventData.id) {
+          setReviewsLoading(true);
+          console.log('📝 Fetching reviews for event ID:', eventData.id);
+          const reviewsData = await fetchReviews(eventData.id);
+          console.log('📝 Received reviews:', reviewsData.reviews.length, 'reviews');
+          console.log('📝 Reviews data:', reviewsData.reviews);
+          setReviews(reviewsData.reviews);
+          setAverageRating(reviewsData.averageRating);
+          setTotalReviews(reviewsData.totalReviews);
+          setReviewsLoading(false);
         }
         
         // Fetch related events (same genre, different event)
@@ -204,6 +235,7 @@ const EventDetail = () => {
                 genre: e.genre || 'General',
                 date: eIsoDate,
                 price: parseFloat(e.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+                image: e.image || undefined,
               };
             });
           
@@ -231,6 +263,7 @@ const EventDetail = () => {
         genre: event.genre,
         date: event.date,
         price: event.price,
+        image: event.image,
       });
     }
   };
@@ -244,7 +277,68 @@ const EventDetail = () => {
         genre: event.genre,
         date: event.date,
         price: event.price,
+        image: event.image,
       });
+    }
+  };
+
+  const handleGenerateImage = async (eventId: number, showToast = true) => {
+    if (generatingImage) return;
+    
+    setGeneratingImage(true);
+    if (showToast) {
+      toast.info("Generating image... This may take a moment.");
+    }
+    
+    try {
+      const result = await generateEventImage({ eventId });
+      
+      if (result.success && result.image) {
+        // Refresh the event data
+        const response = await fetch(`/api/events/${id}`);
+        if (response.ok) {
+          const eventData = await response.json();
+          const lat = Number(eventData.latitude);
+          const lon = Number(eventData.longitude);
+          const venueRegion = (lat && lon && getVenueRegion(lat, lon)) || eventData.venue_name || 'Milwaukee';
+          
+          let isoDate = eventData.date;
+          if (eventData.date && eventData.date.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
+            const [month, day, year] = eventData.date.split('/');
+            isoDate = `20${year.padStart(2, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          }
+          
+          setEvent({
+            id: eventData.id,
+            event_id: eventData.event_id,
+            title: eventData.event_name || 'Untitled Event',
+            event_name: eventData.event_name,
+            region: venueRegion,
+            venue_name: eventData.venue_name,
+            genre: eventData.genre || 'General',
+            date: isoDate,
+            price: parseFloat(eventData.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+            description: eventData.description || 'No description available.',
+            latitude: lat,
+            longitude: lon,
+            organizer: eventData.organizer,
+            image: eventData.image || undefined,
+          });
+        }
+        
+        if (showToast) {
+          toast.success("Image generated successfully!");
+        }
+      } else {
+        throw new Error(result.message || "Failed to generate image");
+      }
+    } catch (error: any) {
+      console.error("Error generating image:", error);
+      if (showToast) {
+        toast.error(error.message || "Failed to generate image. Please check your API keys.");
+      }
+    } finally {
+      setGeneratingImage(false);
     }
   };
 
@@ -417,11 +511,27 @@ const EventDetail = () => {
       <main className="flex-1">
         {/* Hero Banner */}
         <div className="relative h-96 overflow-hidden">
-          {event.image ? (
+          {event.image && event.image.trim() !== '' ? (
             <img 
               src={event.image} 
               alt={event.title}
               className="w-full h-full object-cover"
+              onError={(e) => {
+                console.error('❌ Event detail image failed to load:', event.image);
+                // Fallback to placeholder
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                const parent = target.parentElement;
+                if (parent && !parent.querySelector('.gradient-hero')) {
+                  const placeholder = document.createElement('div');
+                  placeholder.className = 'relative h-full w-full gradient-hero';
+                  placeholder.innerHTML = '<div class="absolute inset-0 flex items-center justify-center"><svg class="w-32 h-32 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div></div>';
+                  parent.appendChild(placeholder);
+                }
+              }}
+              onLoad={() => {
+                console.log('✅ Event detail image loaded:', event.image);
+              }}
             />
           ) : (
             <div className="relative h-full w-full gradient-hero">
@@ -431,7 +541,7 @@ const EventDetail = () => {
             </div>
           )}
           {/* Overlay for better text readability if image exists */}
-          {event.image && (
+          {event.image && event.image.trim() !== '' && (
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
           )}
         </div>
@@ -495,6 +605,29 @@ const EventDetail = () => {
                   />
                   {isSaved ? "Saved" : "Save"}
                 </Button>
+                
+                {/* Generate Image Button */}
+                {(!event.image || event.image.trim() === '') && (
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={() => handleGenerateImage(event.id)}
+                    disabled={generatingImage}
+                    className="w-full gap-2"
+                  >
+                    {generatingImage ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon className="w-5 h-5" />
+                        Generate Image
+                      </>
+                    )}
+                  </Button>
+                )}
                 
                 {/* Share Dropdown */}
                 <DropdownMenu>
@@ -749,6 +882,113 @@ const EventDetail = () => {
                 )}
               </div>
             )}
+
+            {/* Reviews & Ratings Section */}
+            <div className="border-t border-border pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+                  <Star className="w-6 h-6 text-primary" />
+                  Reviews & Ratings
+                </h2>
+                {isAuthenticated && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setReviewDialogOpen(true)}
+                  >
+                    Write a Review
+                  </Button>
+                )}
+              </div>
+              
+              {/* Average Rating Display */}
+              {reviewsLoading ? (
+                <Skeleton className="h-20 w-full mb-4" />
+              ) : (
+                <div className="mb-6 p-4 bg-muted rounded-lg">
+                  <div className="flex items-center gap-4">
+                    <div className="text-4xl font-bold" style={{ color: getRatingColor(averageRating) }}>
+                      {averageRating > 0 ? averageRating.toFixed(1) : "—"}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-1 mb-2">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Star
+                            key={star}
+                            className={`w-5 h-5 ${
+                              star <= Math.round(averageRating)
+                                ? "fill-yellow-400 text-yellow-400"
+                                : "text-muted-foreground"
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {formatRating(averageRating, totalReviews)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Reviews List */}
+              {reviewsLoading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-24 w-full" />
+                  ))}
+                </div>
+              ) : reviews.length > 0 ? (
+                <div className="space-y-4">
+                  {reviews.map((review) => (
+                    <div key={review.id} className="p-4 border border-border rounded-lg">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <p className="font-semibold text-foreground">
+                            {review.user_name || "Anonymous"}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="flex items-center gap-1">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star
+                                  key={star}
+                                  className={`w-4 h-4 ${
+                                    star <= review.rating
+                                      ? "fill-yellow-400 text-yellow-400"
+                                      : "text-muted-foreground"
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <span 
+                              className="text-sm text-muted-foreground"
+                              title={formatFullTimestamp(review.created_at) + (review.updated_at && review.updated_at !== review.created_at ? ` (Updated: ${formatFullTimestamp(review.updated_at)})` : '')}
+                            >
+                              {formatReviewTimestamp(review.created_at, review.updated_at)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {review.review_text && (
+                        <p className="text-foreground mt-2">{review.review_text}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Star className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>No reviews yet. Be the first to review this event!</p>
+                  {!isAuthenticated && (
+                    <p className="text-sm mt-2">
+                      <Link to="/login" className="text-primary hover:underline">
+                        Sign in
+                      </Link> to write a review
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* AI Q&A Section */}
             <div className="border-t border-border pt-6">
@@ -1016,6 +1256,119 @@ const EventDetail = () => {
           </section>
         </div>
       </main>
+      
+      {/* Review Dialog */}
+      <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Write a Review</DialogTitle>
+            <DialogDescription>
+              Share your experience with this event
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Rating</Label>
+              <div className="flex items-center gap-2 mt-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setReviewRating(star)}
+                    className="focus:outline-none"
+                  >
+                    <Star
+                      className={`w-8 h-8 transition-colors ${
+                        star <= reviewRating
+                          ? "fill-yellow-400 text-yellow-400"
+                          : "text-muted-foreground hover:text-yellow-400"
+                      }`}
+                    />
+                  </button>
+                ))}
+                <span className="ml-2 text-sm text-muted-foreground">
+                  {reviewRating} {reviewRating === 1 ? "star" : "stars"}
+                </span>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="review-text">Review (Optional)</Label>
+              <Textarea
+                id="review-text"
+                className="w-full mt-2"
+                rows={4}
+                placeholder="Tell others about your experience..."
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setReviewDialogOpen(false);
+                  setReviewText("");
+                  setReviewRating(5);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!event) return;
+                  setSubmittingReview(true);
+                  try {
+                    const token = localStorage.getItem("session_token");
+                    await fetch("/api/reviews", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: token ? `Bearer ${token}` : "",
+                      },
+                      credentials: "include",
+                      body: JSON.stringify({
+                        event_id: event.id, // This should be the database ID from events table
+                        rating: reviewRating,
+                        review_text: reviewText || null,
+                      }),
+                    });
+                    
+                    // Refresh reviews - use the database ID
+                    console.log('🔄 Refreshing reviews after submission, event.id:', event.id);
+                    const reviewsData = await fetchReviews(event.id);
+                    console.log('🔄 Refreshed reviews:', reviewsData.reviews.length, 'total reviews');
+                    console.log('🔄 Review user IDs:', reviewsData.reviews.map((r: Review) => r.user_id));
+                    setReviews(reviewsData.reviews);
+                    setAverageRating(reviewsData.averageRating);
+                    setTotalReviews(reviewsData.totalReviews);
+                    
+                    toast.success("Review submitted successfully!");
+                    setReviewDialogOpen(false);
+                    setReviewText("");
+                    setReviewRating(5);
+                  } catch (error) {
+                    toast.error("Failed to submit review");
+                    console.error(error);
+                  } finally {
+                    setSubmittingReview(false);
+                  }
+                }}
+                disabled={submittingReview}
+              >
+                {submittingReview ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    Submitting...
+                  </>
+                ) : (
+                  "Submit Review"
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      
       <Footer />
     </div>
   );

@@ -13,6 +13,7 @@ interface Event {
   genre: string;
   date: string;
   price: number;
+  image?: string;
   latitude?: number;
   longitude?: number;
   venue_name?: string;
@@ -49,6 +50,7 @@ const MapView = () => {
               genre: e.genre || 'General',
               date: isoDate,
               price: parseFloat(e.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+              image: e.image || undefined,
               latitude: Number(e.latitude),
               longitude: Number(e.longitude),
               venue_name: e.venue_name,

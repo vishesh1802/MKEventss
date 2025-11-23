@@ -82,6 +82,7 @@ const Discover = () => {
               genre: event.genre || 'General',
               date: isoDate || new Date().toISOString().split('T')[0],
               price: parseFloat(event.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
+              image: event.image || undefined,
             };
           })
           .filter((event: Event | null) => event !== null) as Event[];

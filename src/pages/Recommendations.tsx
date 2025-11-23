@@ -132,6 +132,7 @@ const Recommendations = () => {
             date: isoDate || new Date().toISOString().split('T')[0],
             price: parseFloat(rec.ticket_price?.replace(/[^0-9.]/g, '') || '0'),
             relevanceScore: rec.similarity_score,
+            image: rec.image || undefined,
           };
         });
 

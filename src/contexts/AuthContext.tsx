@@ -108,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("Error logging out:", error);
       }
     }
+    // Always clear local state and storage, even if API call fails
     localStorage.removeItem(SESSION_TOKEN_KEY);
     setUser(null);
   };

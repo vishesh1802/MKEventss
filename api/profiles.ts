@@ -30,43 +30,89 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (req.method === "GET") {
-      // Get all profiles for user
+      // Get user's profile (one profile per user)
       const { rows } = await sql`
         SELECT profile_id as id, name, region, genres, created_at as "createdAt"
         FROM user_profiles
         WHERE user_id = ${user.id}
         ORDER BY created_at DESC
+        LIMIT 1
       `;
 
-      res.status(200).json(rows.map(row => ({
+      if (rows.length === 0) {
+        // No profile exists, return empty array (frontend will create one)
+        return res.status(200).json([]);
+      }
+
+      const row = rows[0];
+      // Parse genres from JSON string or array
+      let parsedGenres = [];
+      try {
+        if (typeof row.genres === 'string') {
+          parsedGenres = JSON.parse(row.genres);
+        } else if (Array.isArray(row.genres)) {
+          parsedGenres = row.genres;
+        }
+      } catch (e) {
+        parsedGenres = [];
+      }
+      
+      res.status(200).json([{
         id: row.id,
         name: row.name,
         region: row.region,
-        genres: row.genres || [],
+        genres: parsedGenres,
         createdAt: row.createdAt,
-      })));
+      }]);
     } else if (req.method === "POST") {
-      // Create new profile
+      // Create or update user's profile (one profile per user)
       const { name, region, genres } = req.body;
 
       if (!name || !region) {
         return res.status(400).json({ error: "Name and region are required" });
       }
 
-      const profileId = `profile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      await sql`
-        INSERT INTO user_profiles (user_id, profile_id, name, region, genres)
-        VALUES (${user.id}, ${profileId}, ${name}, ${region}, ${sql.array(genres || [])})
+      // Check if profile already exists
+      const { rows: existingRows } = await sql`
+        SELECT profile_id FROM user_profiles WHERE user_id = ${user.id} LIMIT 1
       `;
 
-      res.status(201).json({
-        id: profileId,
-        name,
-        region,
-        genres: genres || [],
-        createdAt: new Date().toISOString(),
-      });
+      const genresArray = Array.isArray(genres) ? genres : (genres ? [genres] : []);
+      const genresJson = JSON.stringify(genresArray);
+
+      if (existingRows.length > 0) {
+        // Update existing profile
+        const existingProfileId = existingRows[0].profile_id;
+        await sql`
+          UPDATE user_profiles
+          SET name = ${name}, region = ${region}, genres = ${genresJson}, updated_at = NOW()
+          WHERE user_id = ${user.id} AND profile_id = ${existingProfileId}
+        `;
+
+        res.status(200).json({
+          id: existingProfileId,
+          name,
+          region,
+          genres: genresArray,
+          createdAt: new Date().toISOString(),
+        });
+      } else {
+        // Create new profile
+        const profileId = `profile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        await sql`
+          INSERT INTO user_profiles (user_id, profile_id, name, region, genres)
+          VALUES (${user.id}, ${profileId}, ${name}, ${region}, ${genresJson})
+        `;
+
+        res.status(201).json({
+          id: profileId,
+          name,
+          region,
+          genres: genresArray,
+          createdAt: new Date().toISOString(),
+        });
+      }
     } else if (req.method === "PUT") {
       // Update profile
       const { profileId, name, region, genres } = req.body;
@@ -77,9 +123,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Build update query dynamically
       if (name !== undefined && region !== undefined && genres !== undefined) {
+        const genresArray = Array.isArray(genres) ? genres : (genres ? [genres] : []);
+        const genresJson = JSON.stringify(genresArray);
         await sql`
           UPDATE user_profiles
-          SET name = ${name}, region = ${region}, genres = ${sql.array(genres)}, updated_at = NOW()
+          SET name = ${name}, region = ${region}, genres = ${genresJson}, updated_at = NOW()
           WHERE user_id = ${user.id} AND profile_id = ${profileId}
         `;
       } else if (name !== undefined) {
@@ -95,9 +143,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           WHERE user_id = ${user.id} AND profile_id = ${profileId}
         `;
       } else if (genres !== undefined) {
+        const genresArray = Array.isArray(genres) ? genres : (genres ? [genres] : []);
+        const genresJson = JSON.stringify(genresArray);
         await sql`
           UPDATE user_profiles
-          SET genres = ${sql.array(genres)}, updated_at = NOW()
+          SET genres = ${genresJson}, updated_at = NOW()
           WHERE user_id = ${user.id} AND profile_id = ${profileId}
         `;
       } else {

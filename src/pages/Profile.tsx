@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import EventCard from "@/components/EventCard";
@@ -15,14 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { User, MapPin, Heart, Settings, CheckCircle2, Calendar, TrendingUp, BarChart3, Plus, Trash2, Users } from "lucide-react";
+import { User, MapPin, Heart, Settings, Calendar, TrendingUp, BarChart3, Plus, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSavedEvents } from "@/contexts/SavedEventsContext";
 import { useProfile } from "@/contexts/ProfileContext";
@@ -42,11 +35,32 @@ const Profile = () => {
   const { 
     currentProfile, 
     profiles, 
+    loading: profileLoading,
+    currentProfileId,
     createProfile, 
     updateProfile, 
     deleteProfile, 
     switchProfile 
   } = useProfile();
+
+  // Auto-select profile if it exists but none selected (one profile per user)
+  useEffect(() => {
+    if (!profileLoading && profiles.length > 0 && !currentProfileId) {
+      console.log('🔄 Auto-selecting user profile:', profiles[0].id);
+      switchProfile(profiles[0].id);
+    }
+  }, [profileLoading, profiles.length, currentProfileId, switchProfile]);
+
+  // Debug: Log profile state changes
+  useEffect(() => {
+    console.log('📋 Profile Page State:', {
+      loading: profileLoading,
+      profilesCount: profiles.length,
+      currentProfileId,
+      hasCurrentProfile: !!currentProfile,
+      currentProfileName: currentProfile?.name
+    });
+  }, [profileLoading, profiles.length, currentProfileId, currentProfile]);
   const { savedEvents, attendingEvents } = useSavedEvents();
   const reminders = getReminders();
 
@@ -121,8 +135,107 @@ const Profile = () => {
     }
   };
 
+  // Fetch full event data for saved/attending events to get images
+  const [savedEventsWithImages, setSavedEventsWithImages] = useState<any[]>([]);
+  const [attendingEventsWithImages, setAttendingEventsWithImages] = useState<any[]>([]);
+
+  useEffect(() => {
+    const enrichEventsWithImages = async () => {
+      if (savedEvents.length === 0 && attendingEvents.length === 0) {
+        setSavedEventsWithImages([]);
+        setAttendingEventsWithImages([]);
+        return;
+      }
+
+      try {
+        // Fetch all events from API
+        const response = await fetch('/api/events');
+        if (!response.ok) {
+          setSavedEventsWithImages(savedEvents as any[]);
+          setAttendingEventsWithImages(attendingEvents as any[]);
+          return;
+        }
+        
+        const allEvents = await response.json();
+        
+        // Helper function to get region from coordinates
+        const getVenueRegion = (lat: number, lon: number): string | null => {
+          if (lat >= 43.038 && lat <= 43.045 && lon >= -87.92 && lon <= -87.89) return 'Downtown';
+          if (lat >= 43.0335 && lat <= 43.0345 && lon >= -87.9335 && lon <= -87.9325) return 'Third Ward';
+          if (lat >= 43.0515 && lat <= 43.053 && lon >= -87.906 && lon <= -87.904) return 'Walker\'s Point';
+          if (lat >= 43.0755 && lat <= 43.077 && (lon >= -87.881 && lon <= -87.879 || Math.abs(lon - (-87.88)) < 0.001)) return 'East Side';
+          return null;
+        };
+
+        // Enrich saved events
+        const enrichedSaved = savedEvents
+          .map(savedEvent => {
+            const apiEvent = allEvents.find((e: any) => e.id === savedEvent.id || e.event_id === String(savedEvent.id));
+            if (!apiEvent) return savedEvent;
+
+            let isoDate = apiEvent.date;
+            if (apiEvent.date && apiEvent.date.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
+              const [month, day, year] = apiEvent.date.split('/');
+              isoDate = `20${year.padStart(2, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            }
+
+            const lat = Number(apiEvent.latitude);
+            const lon = Number(apiEvent.longitude);
+            const venueRegion = (lat && lon && getVenueRegion(lat, lon)) || apiEvent.venue_name || 'Milwaukee';
+
+            return {
+              ...savedEvent,
+              title: apiEvent.event_name || savedEvent.title,
+              region: venueRegion,
+              genre: apiEvent.genre || savedEvent.genre,
+              date: isoDate || savedEvent.date,
+              price: parseFloat(apiEvent.ticket_price?.replace(/[^0-9.]/g, '') || '0') || savedEvent.price,
+              image: apiEvent.image || savedEvent.image || undefined,
+            };
+          });
+
+        // Enrich attending events
+        const enrichedAttending = attendingEvents
+          .map(savedEvent => {
+            const apiEvent = allEvents.find((e: any) => e.id === savedEvent.id || e.event_id === String(savedEvent.id));
+            if (!apiEvent) return savedEvent;
+
+            let isoDate = apiEvent.date;
+            if (apiEvent.date && apiEvent.date.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
+              const [month, day, year] = apiEvent.date.split('/');
+              isoDate = `20${year.padStart(2, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            }
+
+            const lat = Number(apiEvent.latitude);
+            const lon = Number(apiEvent.longitude);
+            const venueRegion = (lat && lon && getVenueRegion(lat, lon)) || apiEvent.venue_name || 'Milwaukee';
+
+            return {
+              ...savedEvent,
+              title: apiEvent.event_name || savedEvent.title,
+              region: venueRegion,
+              genre: apiEvent.genre || savedEvent.genre,
+              date: isoDate || savedEvent.date,
+              price: parseFloat(apiEvent.ticket_price?.replace(/[^0-9.]/g, '') || '0') || savedEvent.price,
+              image: apiEvent.image || savedEvent.image || undefined,
+            };
+          });
+
+        setSavedEventsWithImages(enrichedSaved);
+        setAttendingEventsWithImages(enrichedAttending);
+      } catch (error) {
+        console.error('Error enriching events with images:', error);
+        // Fallback to events without images
+        setSavedEventsWithImages(savedEvents as any[]);
+        setAttendingEventsWithImages(attendingEvents as any[]);
+      }
+    };
+
+    enrichEventsWithImages();
+  }, [savedEvents, attendingEvents]);
+
   // Calculate stats
-  const upcomingAttending = attendingEvents.filter(e => {
+  const upcomingAttending = attendingEventsWithImages.filter(e => {
     const eventDate = new Date(e.date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -141,9 +254,9 @@ const Profile = () => {
     <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New Profile</DialogTitle>
+          <DialogTitle>Create Profile</DialogTitle>
           <DialogDescription>
-            Create a new profile with its own saved events and preferences
+            Set up your profile to get personalized event recommendations
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-6 py-4">
@@ -221,7 +334,26 @@ const Profile = () => {
     </Dialog>
   );
 
-  if (!currentProfile) {
+  // Show loading state while profiles are being loaded
+  if (profileLoading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <main className="flex-1 container mx-auto px-4 py-8 flex items-center justify-center">
+          <Card>
+            <CardHeader>
+              <CardTitle>Loading...</CardTitle>
+              <CardDescription>Loading your profiles...</CardDescription>
+            </CardHeader>
+          </Card>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Only show "No Profile Selected" if not loading and truly no profiles exist
+  if (!profileLoading && !currentProfile && profiles.length === 0) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
@@ -241,6 +373,43 @@ const Profile = () => {
         </main>
         <Footer />
         {renderCreateDialog()}
+      </div>
+    );
+  }
+
+  // If profiles exist but none selected, wait for auto-selection
+  if (!profileLoading && !currentProfile && profiles.length > 0) {
+    // Auto-select will happen via useEffect, but show loading state briefly
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <main className="flex-1 container mx-auto px-4 py-8 flex items-center justify-center">
+          <Card>
+            <CardHeader>
+              <CardTitle>Selecting Profile...</CardTitle>
+              <CardDescription>Please wait...</CardDescription>
+            </CardHeader>
+          </Card>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Safety check - should not happen but prevent crashes
+  if (!currentProfile) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <main className="flex-1 container mx-auto px-4 py-8 flex items-center justify-center">
+          <Card>
+            <CardHeader>
+              <CardTitle>Loading Profile...</CardTitle>
+              <CardDescription>Please wait while we load your profile</CardDescription>
+            </CardHeader>
+          </Card>
+        </main>
+        <Footer />
       </div>
     );
   }
@@ -267,36 +436,6 @@ const Profile = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Profile Switcher */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="gap-2">
-                    <Users className="w-4 h-4" />
-                    Switch Profile ({profiles.length})
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  {profiles.map((profile) => (
-                    <DropdownMenuItem
-                      key={profile.id}
-                      onClick={() => switchProfile(profile.id)}
-                      className={currentProfile.id === profile.id ? "bg-primary/10" : ""}
-                    >
-                      <div className="flex items-center justify-between w-full">
-                        <span>{profile.name}</span>
-                        {currentProfile.id === profile.id && (
-                          <CheckCircle2 className="w-4 h-4 text-primary" />
-                        )}
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setShowCreateDialog(true)}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create New Profile
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
               <Button
                 variant="outline"
                 onClick={() => isEditing ? handleCancel() : setIsEditing(true)}
@@ -367,23 +506,6 @@ const Profile = () => {
                 </div>
               </div>
 
-              {/* Delete Profile */}
-              {profiles.length > 1 && (
-                <div className="pt-4 border-t border-border">
-                  <Button
-                    variant="destructive"
-                    onClick={() => {
-                      if (confirm(`Are you sure you want to delete "${currentProfile.name}"?`)) {
-                        handleDeleteProfile(currentProfile.id);
-                      }
-                    }}
-                    className="gap-2"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete Profile
-                  </Button>
-                </div>
-              )}
 
               <Button onClick={handleSave} className="w-full md:w-auto">
                 Save Changes
@@ -490,7 +612,7 @@ const Profile = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-              {attendingEvents.map((event) => (
+              {attendingEventsWithImages.map((event) => (
                 <EventCard key={`attending-${event.id}`} {...event} />
               ))}
             </div>
@@ -524,7 +646,7 @@ const Profile = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-              {savedEvents.map((event) => (
+              {savedEventsWithImages.map((event) => (
                 <EventCard key={`saved-${event.id}`} {...event} />
               ))}
             </div>

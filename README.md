@@ -17,15 +17,17 @@ MKEvents is a modern, responsive web application that helps you discover and man
 - **Region-Based Filtering**: Filter events by neighborhood (Downtown, East Side, Walker's Point, Third Ward)
 - **Genre Filtering**: Find events by category (Music, Sports, Business, Comedy, Food, and more)
 - **Date Range Filtering**: Search events by specific date ranges
-- **Event Details**: Comprehensive event pages with images, descriptions, and organizer info
+- **Event Details**: Comprehensive event pages with auto-generated images, descriptions, and organizer info
+- **Event Images**: Automatic image generation using Unsplash API for all events
 
 ### User Features
 - **User Authentication**: Sign up and log in to save your preferences
-- **Multiple Profiles**: Create and switch between multiple user profiles
+- **User Profile**: One profile per user with customizable preferences (region, genres)
 - **Save Events**: Bookmark events for later
 - **Attend Events**: Mark events you plan to attend
-- **User Profile**: Manage your saved and attending events
+- **User Profile Management**: Manage your saved and attending events
 - **Personalized Dashboard**: Get insights into your event preferences
+- **Event Reviews & Ratings**: Rate and review events (1-5 stars)
 - **Event Comparison**: Compare multiple events side-by-side
 - **Map View**: Visualize event locations on an interactive map
 
@@ -41,7 +43,8 @@ MKEvents is a modern, responsive web application that helps you discover and man
 - **Event Reminders**: Set custom reminders for upcoming events
 - **Get Directions**: Quick access to event locations with Google Maps
 - **Weather Forecast**: See weather conditions for event dates with helpful recommendations
-- **Nearby Places**: Discover restaurants and bars near event venues
+- **Nearby Places**: Discover restaurants and bars near event venues using Google Places API
+- **Event Reviews**: Read and write reviews with ratings for events
 
 ## Getting Started
 
@@ -80,12 +83,16 @@ MKEvents is a modern, responsive web application that helps you discover and man
    # Optional: AI Features (OpenRouter)
    OPENROUTER_API_KEY=your_openrouter_api_key
    OPENROUTER_MODEL=openai/gpt-3.5-turbo
+   
+   # Optional: Event Image Generation (Unsplash)
+   UNSPLASH_ACCESS_KEY=your_unsplash_access_key_here
    ```
    
    **Note**: 
    - `PASSWORD_SALT` is optional for development but recommended. Generate a random string for production.
-   - Weather and Places API keys are optional. The app will use mock data if keys are not provided. See `WEATHER_INTEGRATION_SETUP.md` for setup instructions.
-   - OpenRouter API key is optional. Enables AI-powered features like event descriptions and personalized summaries. See `OPENROUTER_SETUP.md` for setup instructions.
+   - Weather and Places API keys are optional. The app will use mock data if keys are not provided.
+   - OpenRouter API key is optional. Enables AI-powered features like event descriptions and personalized summaries.
+   - Unsplash API key is optional. Enables automatic image generation for events. Without it, placeholder images will be used.
 
 4. **Set up the database**
    
@@ -129,9 +136,14 @@ MKEventsss/
 │   │   ├── logout.ts   # User logout
 │   │   └── me.ts       # Get current user
 │   ├── events/         # Event-related endpoints
+│   │   ├── [id]/       # Individual event endpoints
+│   │   └── image/      # Event image generation
 │   ├── events.ts       # Get all events
 │   ├── profiles.ts     # User profile management
-│   └── recommend.ts    # Event recommendations
+│   ├── reviews.ts     # Event reviews and ratings
+│   ├── recommend.ts    # Event recommendations
+│   ├── weather.ts      # Weather forecasts
+│   └── nearby-places.ts # Nearby restaurants/bars
 ├── src/
 │   ├── components/     # React components
 │   │   ├── ui/        # shadcn/ui components
@@ -156,7 +168,11 @@ MKEventsss/
 │   ├── utils/          # Utility functions
 │   │   ├── calendar.ts
 │   │   ├── reminders.ts
-│   │   └── share.ts
+│   │   ├── share.ts
+│   │   ├── weather.ts
+│   │   ├── nearby-places.ts
+│   │   ├── reviews.ts
+│   │   └── ai.ts
 │   └── App.tsx         # Main app component
 ├── scripts/            # Database setup scripts
 │   ├── setup.ts
@@ -218,11 +234,12 @@ Events are mapped to regions based on venue coordinates:
 
 ### Data Storage
 - **User Accounts**: Stored in Vercel Postgres database (users table)
-- **User Profiles**: Stored in Vercel Postgres database (user_profiles table) for authenticated users, localStorage for guests
+- **User Profiles**: Stored in Vercel Postgres database (user_profiles table) - one profile per user
 - **User Sessions**: Stored in Vercel Postgres database (user_sessions table)
+- **Event Reviews**: Stored in Vercel Postgres database (event_reviews table)
 - **Saved Events**: Stored in browser localStorage
 - **Attending Events**: Stored in browser localStorage
-- **Event Data**: Stored in Vercel Postgres database
+- **Event Data**: Stored in Vercel Postgres database (events table with images)
 
 ## Deployment
 

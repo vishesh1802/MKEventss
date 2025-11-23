@@ -40,26 +40,129 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         if (isAuthenticated && user) {
           // Load from backend
           const token = localStorage.getItem("session_token");
+          console.log('🔍 Loading profiles for user:', user.email, 'Token exists:', !!token);
+          
+          if (!token) {
+            console.error('❌ No session token found!');
+            setProfiles([]);
+            setLoading(false);
+            return;
+          }
+          
           const response = await fetch("/api/profiles", {
             headers: {
               Authorization: `Bearer ${token}`,
             },
           });
 
+          console.log('📡 Profiles API response status:', response.status);
+
           if (response.ok) {
             const backendProfiles = await response.json();
-            setProfiles(backendProfiles);
+            console.log('✅ Loaded profiles from database:', backendProfiles.length);
             
-            // Try to restore current profile from localStorage
-            const savedCurrentId = localStorage.getItem(CURRENT_PROFILE_KEY);
-            if (savedCurrentId && backendProfiles.find((p: Profile) => p.id === savedCurrentId)) {
-              setCurrentProfileId(savedCurrentId);
-            } else if (backendProfiles.length > 0) {
-              setCurrentProfileId(backendProfiles[0].id);
+            // If no profiles in database, create one automatically (one profile per user)
+            if (backendProfiles.length === 0) {
+                // No profiles in database or localStorage - create default immediately
+                console.log('📝 No profiles found, creating default profile...');
+                const defaultProfileData = {
+                  name: user.name || "Milwaukee Explorer",
+                  region: "Downtown",
+                  genres: ["Music", "Food"],
+                };
+                
+                // Create immediate fallback first (synchronous)
+                const immediateFallback: Profile = {
+                  id: `profile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  name: defaultProfileData.name,
+                  region: defaultProfileData.region,
+                  genres: defaultProfileData.genres,
+                  createdAt: new Date().toISOString(),
+                };
+                
+                console.log('⚡ Creating immediate fallback profile:', immediateFallback.id);
+                setProfiles([immediateFallback]);
+                setCurrentProfileId(immediateFallback.id);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify([immediateFallback]));
+                localStorage.setItem(CURRENT_PROFILE_KEY, immediateFallback.id);
+                setLoading(false);
+                
+                // Then try to save to backend (async, non-blocking)
+                try {
+                  const createResponse = await fetch("/api/profiles", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify(defaultProfileData),
+                  });
+                  
+                  if (createResponse.ok) {
+                    const newProfile = await createResponse.json();
+                    console.log('✅ Saved default profile to database:', newProfile.id);
+                    // Update with database profile (has proper ID)
+                    setProfiles([newProfile]);
+                    setCurrentProfileId(newProfile.id);
+                    localStorage.setItem(CURRENT_PROFILE_KEY, newProfile.id);
+                    // Update localStorage too
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify([newProfile]));
+                  } else {
+                    const errorText = await createResponse.text();
+                    console.warn('⚠️ Failed to save profile to database (using local):', createResponse.status, errorText);
+                    // Keep using the fallback profile
+                  }
+                } catch (error) {
+                  console.warn('⚠️ Error saving profile to database (using local):', error);
+                  // Keep using the fallback profile
+                }
+            } else {
+              // One profile per user - use the first (and only) profile
+              const userProfile = backendProfiles[0];
+              setProfiles([userProfile]);
+              setCurrentProfileId(userProfile.id);
+              localStorage.setItem(CURRENT_PROFILE_KEY, userProfile.id);
+              console.log(`✅ Loaded user profile: ${userProfile.name}`);
+              setLoading(false);
             }
           } else {
-            // Fallback to empty array
-            setProfiles([]);
+            // API error - check what the error is
+            const errorText = await response.text();
+            console.error('❌ Profiles API error:', response.status, errorText);
+            
+            // If unauthorized, user might need to login again
+            if (response.status === 401) {
+              console.error('⚠️ Unauthorized - session might be expired');
+              // Don't clear profiles, but log the issue
+            }
+            
+            // Fallback to localStorage if available
+            const savedProfiles = localStorage.getItem(STORAGE_KEY);
+            if (savedProfiles) {
+              try {
+                const parsed = JSON.parse(savedProfiles);
+                console.log('📦 Falling back to localStorage profiles:', parsed.length);
+                setProfiles(parsed);
+                const savedCurrentId = localStorage.getItem(CURRENT_PROFILE_KEY);
+                if (savedCurrentId && parsed.find((p: Profile) => p.id === savedCurrentId)) {
+                  setCurrentProfileId(savedCurrentId);
+                  localStorage.setItem(CURRENT_PROFILE_KEY, savedCurrentId);
+                } else if (parsed.length > 0) {
+                  const firstId = parsed[0].id;
+                  setCurrentProfileId(firstId);
+                  localStorage.setItem(CURRENT_PROFILE_KEY, firstId);
+                }
+                setLoading(false);
+              } catch (error) {
+                console.error("Error loading profiles from localStorage:", error);
+                setProfiles([]);
+                setLoading(false);
+              }
+            } else {
+              console.log('⚠️ No profiles in database or localStorage');
+              setProfiles([]);
+              setLoading(false);
+            }
           }
         } else {
           // Load from localStorage for non-authenticated users
@@ -250,6 +353,19 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const currentProfile = currentProfileId
     ? profiles.find((p) => p.id === currentProfileId) || null
     : null;
+
+  // Debug logging for current profile state
+  useEffect(() => {
+    if (!loading) {
+      console.log('📊 Profile State:', {
+        profilesCount: profiles.length,
+        currentProfileId,
+        currentProfile: currentProfile ? currentProfile.name : null,
+        isAuthenticated,
+        userId: user?.id
+      });
+    }
+  }, [profiles.length, currentProfileId, currentProfile, loading, isAuthenticated, user?.id]);
 
   return (
     <ProfileContext.Provider

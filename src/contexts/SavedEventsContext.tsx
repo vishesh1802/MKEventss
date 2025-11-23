@@ -9,6 +9,7 @@ interface SavedEvent {
   genre: string;
   date: string;
   price: number;
+  image?: string;
 }
 
 interface SavedEventsContextType {

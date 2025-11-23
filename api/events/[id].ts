@@ -30,7 +30,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(404).json({ error: "Event not found" });
     }
 
-    res.status(200).json(result.rows[0]);
+    const event = result.rows[0];
+    // Ensure image field is included
+    res.status(200).json({
+      ...event,
+      image: event.image || null,
+    });
   } catch (error) {
     console.error("❌ DB Error:", error);
     res.status(500).json({ error: (error as Error).message });
